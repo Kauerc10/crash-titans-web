@@ -30,3 +30,20 @@ test('conversation starts once per live encounter and retry restarts it with exa
  assert(combat.step(.1,player).some(e=>e.type==='presentationStarted'));
  assert.equal(combat.enemies.length,2);
 });
+
+test('skipPresentation ends introduction immediately and restores control and heavy attack',()=>{
+ const combat=new Combat(data);
+ combat.step(.1,player);
+ assert(combat.presentation);
+ assert.equal(combat.busy,true);
+ combat.skipPresentation();
+ assert.equal(combat.presentation,null);
+ assert.equal(combat.busy,false);
+ assert.equal(combat.enemies[0].animation,'idle_combat');
+ assert.equal(combat.enemies[1].animation,'idle_combat');
+ const events=combat.step(.05,player);
+ assert(events.some(e=>e.type==='presentationEnded'&&e.skipped));
+ combat.requestHeavyAttack();
+ combat.step(.05,player);
+ assert.equal(combat.attack.clip,'attack_lite_C');
+});

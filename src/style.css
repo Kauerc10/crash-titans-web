@@ -204,10 +204,14 @@ kbd { color: #fff0b7; font: 700 14px/1.8 SystemUI, sans-serif; min-width: 33px; 
 @keyframes hud-pulse { to { opacity:.45; } }
 @media (prefers-reduced-motion:reduce) { .native-hud * { animation:none!important; transition:none!important; } }
 
-.hud-tutorial { position:absolute; left:50%; top:calc(76px * var(--hud-scale,1)); transform:translateX(-50%) scale(var(--hud-scale,1)); transform-origin:top center; width:520px; max-width:90%; pointer-events:none; z-index:10; display:flex; flex-direction:column; align-items:center; }
-.hud-tutorial-banner { position:relative; width:100%; display:flex; flex-direction:column; align-items:center; background:url('/assets/hud/message_bar_background.webp') center/cover no-repeat; padding:12px 24px; border-radius:8px; box-shadow:0 6px 16px #000a; }
-.hud-tutorial-title { font:bold 18px 'Trebuchet MS',sans-serif; color:#ffdd33; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px; text-shadow:0 2px 4px #000; }
+.hud-tutorial { position:absolute; left:50%; bottom:calc(36px * var(--hud-scale,1)); transform:translateX(-50%) scale(var(--hud-scale,1)); transform-origin:bottom center; width:540px; max-width:92%; pointer-events:none; z-index:10; display:flex; flex-direction:column; align-items:center; transition:opacity .2s ease-out; }
+.hud-tutorial-banner { position:relative; width:100%; display:flex; flex-direction:column; align-items:center; background:linear-gradient(180deg, rgba(16,20,26,.94) 0%, rgba(8,10,14,.96) 100%); border:2px solid #5a4122; border-radius:10px; padding:12px 24px; box-shadow:0 8px 24px #000c, inset 0 0 16px rgba(255,180,50,.08); }
+.hud-tutorial-title { font:bold 18px 'Trebuchet MS',sans-serif; color:#ffdd33; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px; text-shadow:0 2px 4px #000; }
 .hud-tutorial-content { display:flex; align-items:center; gap:16px; width:100%; }
-.hud-tutorial-icon { width:54px; height:54px; flex-shrink:0; filter:drop-shadow(0 2px 4px #000b); }
+.hud-tutorial-icon { width:52px; height:52px; flex-shrink:0; filter:drop-shadow(0 2px 4px #000b); }
 .hud-tutorial-text { font:16px Arial,sans-serif; color:#ffffff; line-height:1.4; text-shadow:0 1px 3px #000, 0 0 6px #000; }
-.hud-tutorial-divider { width:80%; height:8px; opacity:0.8; margin-top:4px; }
+.hud-tutorial-divider { width:75%; height:6px; opacity:0.75; margin-top:6px; }
+
+.skip-conversation-pill { position:absolute; bottom:28px; right:28px; background:rgba(12,16,22,.92); border:1.5px solid #ffcc33; color:#ffdd55; font:bold 14px 'Trebuchet MS',sans-serif; padding:10px 18px; border-radius:24px; cursor:pointer; z-index:20; display:flex; align-items:center; gap:8px; box-shadow:0 6px 16px rgba(0,0,0,.6); transition:background .15s, transform .15s; }
+.skip-conversation-pill:hover { background:rgba(255,204,51,.25); transform:scale(1.04); }
+.skip-conversation-pill:active { transform:scale(0.98); }
