@@ -23,5 +23,18 @@ export class EnemyActors {
   }
  }
  afterStep(enemies){for(const e of enemies){const v=this.views.get(e.id);if(v?.body){const p=v.body.translation();e.position=[p.x,p.y-v.center,p.z];}}}
- render(enemies,dt){for(const e of enemies){const v=this.views.get(e.id);if(!v)continue;v.object.position.fromArray(e.position);v.object.rotation.y=e.yaw;v.object.visible=e.health>0||e.age<1.3;v.animation.play(`PTRN_chiratta_${e.animation}`,['attack','hit','dead'].includes(e.state));v.animation.update(dt);}}
+ render(enemies,dt){
+  for(const e of enemies){
+   const v=this.views.get(e.id);if(!v)continue;
+   v.object.position.fromArray(e.position);v.object.rotation.y=e.yaw;
+   if(e.health<=0){
+    v.object.visible=e.age<1.8;
+    const fade=e.age>1.5?Math.max(0,(1.8-e.age)/.3):1;
+    v.object.traverse(o=>{if(o.isMesh&&o.material){for(const m of [].concat(o.material)){m.transparent=fade<1;m.opacity=fade;}}});
+   }else{
+    v.object.visible=true;
+   }
+   v.animation.play(`PTRN_chiratta_${e.animation}`,['attack','hit','dead'].includes(e.state));v.animation.update(dt);
+  }
+ }
 }

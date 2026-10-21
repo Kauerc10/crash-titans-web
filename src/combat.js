@@ -3,7 +3,7 @@ import { combatRules } from './combat-rules.js';
 
 // Base health, strike damage/strength and contact windows are recovered source data.
 // Reach, pursuit, stagger, input grace and invulnerability are native tuning.
-export const combatTuning=Object.freeze({playerHealth:combatRules.player.maxHealth,enemyHealth:combatRules.enemy.maxHealth,damage:combatRules.attacks.attack_lite_A[0].damage,enemyDamage:combatRules.attacks.attack_light[0].damage,reach:2.15,enemyReach:1.65,enemySpeed:3.2,invulnerability:.8});
+export const combatTuning=Object.freeze({playerHealth:combatRules.player.maxHealth,enemyHealth:combatRules.enemy.maxHealth,damage:combatRules.attacks.attack_lite_A[0].damage,enemyDamage:combatRules.attacks.attack_light[0].damage,reach:2.15,enemyReach:1.65,enemySpeed:3.2,invulnerability:.8,enemyHitStagger:.45,enemyDeathDuration:1.8});
 const distance=(a,b)=>Math.hypot(a[0]-b[0],a[2]-b[2]);
 export class Combat {
  constructor(data,durations={}){this.data=data;this.durations=durations;this.cleared=new Set();this.savedCleared=new Set();this.generation=0;this.resetToCheckpoint();}
@@ -52,7 +52,7 @@ export class Combat {
   for(const e of this.enemies){
    e.age+=dt;e.motion=[0,0];
    if(e.health<=0)continue;
-   if(e.state==='hit'){if(e.age<.4)continue;e.state='idle';e.age=0;}
+   if(e.state==='hit'){if(e.age<(this.durations.hitStagger||combatTuning.enemyHitStagger))continue;e.state='idle';e.age=0;}
    const d=distance(e.position,player.position),height=Math.abs(e.position[1]-player.position[1]);
    if(e.state==='attack'){
     const duration=this.durations.enemyAttack||combatRules.durations.attack_light,window=combatRules.attacks.attack_light[0];
