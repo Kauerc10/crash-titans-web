@@ -1,4 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 const folder = new URL('../public/assets/levels/l1-e1/', import.meta.url);
 const logic = JSON.parse(await readFile(new URL('logic.json',folder),'utf8'));
@@ -20,6 +21,9 @@ for (const objective of objectives) {
   const trigger = objective.steps.find(s=>s.method==='WAIT_TriggerVolume')?.args[0];
   const reset = objective.steps.find(s=>s.method==='DO_SetPlayerResetPosition')?.args[0];
   const requires = objective.steps.filter(s=>s.method==='WAIT_ObjectiveComplete').map(s=>s.args[0]);
+  if (objective.id === 'WhumpaE1LevelReset3' && !requires.includes('L1_E1_Combat2')) {
+    requires.push('L1_E1_Combat2');
+  }
   if (reset) {
     if (!volumes[trigger] || !locators[reset]) throw Error(`Unresolved checkpoint ${objective.id}: ${trigger} / ${reset}`);
     checkpoints.push({id:objective.id,trigger,locator:reset,requires});
@@ -33,5 +37,10 @@ const output = {episode:'L1_E1',source:logic.scripts.objectives.source,coordinat
     'Objective declarations are independent branches, not a linear encounter order.',
     'Checkpoints and a native approximate battle for L1_E1_Combat2 are supported; other encounters remain inventory. Amb1 and full source objective completion are not implemented.']};
 await writeFile(new URL('gameplay.json',folder),JSON.stringify(output));
-await writeFile(new URL('../../crash-analysis/episode-one-objectives.json',import.meta.url),JSON.stringify({source:output.source,checkpoints:checkpoints.length,encounters:encounters.length,objectives:objectives.map(o=>({id:o.id,requires:o.steps.filter(s=>s.method==='WAIT_ObjectiveComplete').map(s=>s.args[0]),trigger:o.steps.find(s=>s.method==='WAIT_TriggerVolume')?.args[0],methods:o.steps.map(s=>s.method)})),limitations:output.limitations},null,2));
+
+const candidateUrls = [new URL('../../crash-analysis/', import.meta.url), new URL('../../../../outputs/crash-analysis/', import.meta.url)];
+const targetDir = candidateUrls.find(u => existsSync(fileURLToPath(u)));
+if (targetDir) {
+  await writeFile(new URL('episode-one-objectives.json', targetDir),JSON.stringify({source:output.source,checkpoints:checkpoints.length,encounters:encounters.length,objectives:objectives.map(o=>({id:o.id,requires:o.steps.filter(s=>s.method==='WAIT_ObjectiveComplete').map(s=>s.args[0]),trigger:o.steps.find(s=>s.method==='WAIT_TriggerVolume')?.args[0],methods:o.steps.map(s=>s.method)})),limitations:output.limitations},null,2));
+}
 console.log(JSON.stringify({file:fileURLToPath(new URL('gameplay.json',folder)),checkpoints:checkpoints.length,encounters:encounters.length,objectives:objectives.length}));
