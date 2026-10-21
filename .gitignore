@@ -1,0 +1,20 @@
+# Original game content and local conversion output stay on the owner's machine.
+/public/assets/
+/previews/
+/verification*.json
+node_modules/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+*.iso
+*.chd
+*.bin
+*.rcf
+*.p3d
+*.glb
+*.ogg
+*.mp4
+.scratch/
+planning-drafts/
