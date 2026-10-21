@@ -14,6 +14,7 @@ import { Combat, combatTuning } from './combat.js';
 import { GameplayHud } from './gameplay-hud.js';
 import { EnemyActors } from './enemy-actors.js';
 import { GameplayEffects } from './gameplay-effects.js';
+import { TutorialManager } from './tutorials.js';
 
 const base = '/assets/levels/l1-e1/';
 const json = async url => { const r = await fetch(url); if (!r.ok) throw Error(`${url}: ${r.status}`); return r.json(); };
@@ -40,7 +41,8 @@ export async function startGame(viewport, onExit, settings) {
   const jumpInput = new JumpInput(); let progress,follow,noticeUntil=0,gameplayTime=0,jumpCount=0,recoveryCount=0,spaceHeld=false;
   let breakables,props,pickups,pickupActors;
   let combat,enemies,visuals,padAttackDown=false;
-  function updateHud(){if(combat)gameplayHud.update(combat,pickups,gameplayTime);}
+  let tutorials;
+  function updateHud(){if(combat)gameplayHud.update(combat,pickups,gameplayTime,tutorials);}
   const padJumpHeld=()=>[...(navigator.getGamepads?.()||[])].some(p=>p?.mapping==='standard'&&p.buttons[0]?.pressed);
   const occluders=[];
   const regionObjects=new Map();
@@ -62,7 +64,7 @@ export async function startGame(viewport, onExit, settings) {
     pickupActors?.clear();props?.clear();visuals?.dispose();effects.stop();window.removeEventListener('game-audio-settings',settingsChanged);enemies?.clear();renderer?.dispose(); world?.free(); root.remove(); onExit();
   }
   action('Voltar ao menu', stop);
-  const pauseButton = action('Pausar', () => { paused = !paused; if(paused)visuals?.clear(); effects.pause(paused);keys.clear();
+  const pauseButton = action('Pausar', () => { paused = !paused; if(paused)visuals?.clear(); effects.pause(paused);tutorials?.pause(paused);keys.clear();
     jumpInput.suspend();
     const heldPad=padJumpHeld();
     padAttackDown=[...(navigator.getGamepads?.()||[])].some(p=>p?.buttons[2]?.pressed);
@@ -76,11 +78,11 @@ export async function startGame(viewport, onExit, settings) {
     body.setTranslation({x:checkpoint.position[0],y:checkpoint.position[1]+.95,z:checkpoint.position[2]},true);
     crash.rotation.y=checkpoint.yaw;velocity=0;accumulator=0;keys.clear();spaceHeld=false;jumpInput.reset();follow.reset();
     recoveryCount++;
-    ambientAudio?.pause();if(ambientAudio)ambientAudio.currentTime=0;visuals?.clear();effects.clear();pickups?.resetToCheckpoint();gameplayHud.reset(pickups?.total||0);breakables?.resetToCheckpoint();props?.sync(breakables);combat?.resetToCheckpoint();enemies?.clear();updateHud();
+    ambientAudio?.pause();if(ambientAudio)ambientAudio.currentTime=0;visuals?.clear();effects.clear();pickups?.resetToCheckpoint();gameplayHud.reset(pickups?.total||0);breakables?.resetToCheckpoint();props?.sync(breakables);combat?.resetToCheckpoint();tutorials?.resetToCheckpoint();enemies?.clear();updateHud();
     notice('Retomando do último checkpoint',3);
   }
   function showError(e) { status.hidden = false; status.textContent = `Falha ao carregar: ${e.message}. Volte ao menu para tentar novamente.`; }
-  function keyDown(e) { if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault(); keys.add(e.code); if(e.code==='Space'&&!e.repeat){spaceHeld=true;if(phase==='play'&&!paused)jumpInput.press();} if(e.code==='KeyJ'&&!e.repeat&&phase==='play'&&!paused)combat?.requestAttack(); if (e.code === 'Escape' && !e.repeat) pauseButton.click(); }
+  function keyDown(e) { tutorials?.setInputMode('keyboard'); if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault(); keys.add(e.code); if(e.code==='Space'&&!e.repeat){spaceHeld=true;if(phase==='play'&&!paused)jumpInput.press();} if(e.code==='KeyJ'&&!e.repeat&&phase==='play'&&!paused)combat?.requestAttack(); if (e.code === 'Escape' && !e.repeat) pauseButton.click(); }
   function keyUp(e) { keys.delete(e.code);if(e.code==='Space'){spaceHeld=false;if(!padJumpHeld())jumpInput.release();} }
   function blur() { keys.clear();spaceHeld=false; if (!paused && phase !== 'loading') pauseButton.click(); }
   document.addEventListener('keydown', keyDown); document.addEventListener('keyup', keyUp); window.addEventListener('blur', blur);
@@ -96,7 +98,6 @@ export async function startGame(viewport, onExit, settings) {
   function enterPlay() {
     if (!crash || !body || phase === 'play') return;
     phase = 'play'; dialogue?.pause(); actors.forEach(a => a.visible = false); crash.visible = true; skip.hidden = true;
-    // Original PlayerSpawnPosition; cinematic handoff objectives remain under investigation.
     if (cinematicCrash) {
       const index = actors.indexOf(cinematicCrash); mixers[index].setTime(103.3333); cinematicCrash.updateMatrixWorld(true);
       let motion; cinematicCrash.traverse(o => { if (o.isBone && /Motion_Root/i.test(o.name)) motion = o; });
@@ -115,8 +116,6 @@ export async function startGame(viewport, onExit, settings) {
     const loader = new GLTFLoader(manager);
     const add = gltf => { if (stopped) return; scene.add(gltf.scene); gltf.scene.traverse(o => {
       resources.add(o); if (o.userData.collisionMaterial) o.visible = false;
-      // NIS moves bones in world space while the mesh node stays at its anchor.
-      // Bind-pose bounds therefore cannot cull an animated actor correctly.
       if (o.isSkinnedMesh) o.frustumCulled = false;
       for (const material of [].concat(o.material || [])) {
         if (material.userData.properties?.ATST === 1) { material.alphaTest = .01; material.transparent = false; material.depthWrite = true; material.needsUpdate = true; }
@@ -129,6 +128,7 @@ export async function startGame(viewport, onExit, settings) {
     if(!new URLSearchParams(location.search).has('combat-test')&&!new URLSearchParams(location.search).has('interactions-test'))gameplay.encounters.find(e=>e.id==='L1_E1_Combat2').presentation=ambient;
     ambientAudio=new Audio(ambient.audio);ambientAudio.volume=settings.muted?0:settings.effects;ambientAudio.preload='auto';root.append(ambientAudio);
     progress = new EpisodeProgress(gameplay);follow=new FollowCamera(camera);
+    tutorials = new TutorialManager(gameplay, effects);
     const collision = await json(base + 'source-collision.json');
     const collisionBytes = await (await fetch(base + 'source-collision.bin')).arrayBuffer();
     await RAPIER.init(); if (stopped) return;
@@ -173,8 +173,6 @@ export async function startGame(viewport, onExit, settings) {
     pickups=new Pickups(propData);
     await Promise.all(Object.entries(pickups.types).map(async ([type,definition])=>{try{const source=add(await loader.loadAsync(definition.model));if(!source)return;source.scene.visible=false;pickupSources.set(type,source);}catch(e){console.warn('Pickup model load failed:',definition.model,e);}}));
     pickupActors=new PickupActors(scene,pickupSources);
-    // Source shadow actors are projection inputs, not opaque scene geometry.
-    // Keep them out until the original projected-shadow pass is implemented.
     await Promise.all(runtime.actors.filter(a => a.url && !a.name.endsWith('_shadow')).map(async actor => {
       const gltf = add(await loader.loadAsync(actor.url)); if (!gltf) return;
       gltf.scene.position.set(-66.5162964,-2.566556,-39.922077); actors.push(gltf.scene);
@@ -189,12 +187,13 @@ export async function startGame(viewport, onExit, settings) {
       get pickups(){return {total:pickups.total,items:[...pickups.items.values()].map(p=>({...p,position:[...p.position]})),colliders:props.colliderCount};},
       get audio(){return {state:effects.context?.state,buffers:effects.buffers.size,active:effects.sources.size,played:effects.playCount};},
       get combat(){return {presentation:combat.presentation?{id:combat.presentation.id,age:combat.presentation.age,duration:combat.presentation.duration}:null,health:combat.player.health,maxHealth:combatTuning.playerHealth,enemies:combat.enemies.map(e=>({...e})),cleared:[...combat.cleared],attack:combat.attack?.clip,animation:combat.animation};},
+      get tutorials(){return {completed:[...tutorials.completed],active:tutorials.active?{...tutorials.active}:null,inputMode:tutorials.inputMode,spikeReached:tutorials.spikeReached};},
     };
     dialogue = new Audio(runtime.audioSource); dialogue.volume = settings.muted ? 0 : settings.effects; dialogue.preload = 'auto'; root.append(dialogue);
     status.textContent = 'Cena original pronta';
     const testParams=new URLSearchParams(location.search),combatTest=testParams.get('combat-test')==='1',interactionsTest=testParams.get('interactions-test')==='1';
     function testPosition(prop){
-      const foot=[...prop.position];foot[2]+=1.65;body.setTranslation({x:foot[0],y:foot[1]+.95,z:foot[2]},true);crash.rotation.y=Math.PI;velocity=0;accumulator=0;follow.reset();progress.setEntry(foot,Math.PI);combat.markCheckpoint();breakables.markCheckpoint();pickups.markCheckpoint();
+      const foot=[...prop.position];foot[2]+=1.65;body.setTranslation({x:foot[0],y:foot[1]+.95,z:foot[2]},true);crash.rotation.y=Math.PI;velocity=0;accumulator=0;follow.reset();progress.setEntry(foot,Math.PI);combat.markCheckpoint();breakables.markCheckpoint();pickups.markCheckpoint();tutorials.markCheckpoint();
     }
     const begin = action(interactionsTest?'Iniciar teste de interações':combatTest?'Iniciar teste de combate':'Iniciar cena', async () => { try {
       await effects.unlock();
@@ -226,6 +225,7 @@ export async function startGame(viewport, onExit, settings) {
         gameplayTime+=dt;if(gameplayTime>noticeUntil)status.hidden=true;
         accumulator = Math.min(accumulator+dt,.1);
         const pad=[...(navigator.getGamepads?.()||[])].find(p=>p&&p.mapping==='standard');
+        if(pad&&(Math.abs(pad.axes[0]||0)>.2||Math.abs(pad.axes[1]||0)>.2||pad.buttons.some(b=>b?.pressed)))tutorials.setInputMode('gamepad');
         const padAttack=!!pad?.buttons[2]?.pressed;if(padAttack&&!padAttackDown)combat.requestAttack();padAttackDown=padAttack;
         const deadzone=value=>Math.abs(value||0)>.2?value:0;
         const x = Number(keys.has('KeyD')||keys.has('ArrowRight'))-Number(keys.has('KeyA')||keys.has('ArrowLeft'))+deadzone(pad?.axes[0]);
@@ -240,7 +240,18 @@ export async function startGame(viewport, onExit, settings) {
           events.push(...breakables.step(combat.propAttack,{position:[pp.x,pp.y-.95,pp.z],yaw:crash.rotation.y}));
           for(const event of events)pickups.spawn(event);
           events.push(...pickups.step(1/60,[pp.x,pp.y-.95,pp.z]));props.sync(breakables);
-          for(const event of events){if(event.type==='healthCollected')combat.healPlayer(event.value);if(event.type==='presentationStarted'){ambientAudio.currentTime=0;ambientAudio.play().catch(showError);notice('Conversa dos Chirattas',combat.presentation.duration);}if(event.type==='presentationEnded'){ambientAudio.pause();notice('Derrote os Chirattas • J: ataque leve',5);}gameplayHud.event(event,gameplayTime);effects.event(event);visuals?.event(event,[pp.x,pp.y-.95,pp.z]);if(event.type==='spawn')notice('Derrote os Chirattas • J: ataque leve',5);if(event.type==='cleared'){progress.complete(event.id);notice('Encontro vencido',4);}if(event.type==='propBlocked')notice('Este objeto exige mais força',2);}
+          events.push(...tutorials.step(1/60,[pp.x,pp.y-.95,pp.z],progress));
+          for(const event of events){
+            if(event.type==='healthCollected')combat.healPlayer(event.value);
+            if(event.type==='presentationStarted'){ambientAudio.currentTime=0;ambientAudio.play().catch(showError);notice('Conversa dos Chirattas',combat.presentation.duration);}
+            if(event.type==='presentationEnded'){ambientAudio.pause();notice('Derrote os Chirattas • J: ataque leve',5);}
+            if(event.type==='tutorialStarted'){effects.event(event);notice(`${event.title}: ${event.text}`,event.duration||5);}
+            gameplayHud.event(event,gameplayTime);effects.event(event);visuals?.event(event,[pp.x,pp.y-.95,pp.z]);
+            if(event.type==='spawn')notice('Derrote os Chirattas • J: ataque leve',5);
+            if(event.type==='cleared'){progress.complete(event.id);notice('Encontro vencido',4);}
+            if(event.type==='propBlocked')notice('Este objeto exige mais força',2);
+            if(event.type==='spikeInteractionReached')notice('Primeiro Titã: Spike • Prepare-se para enfrentar o titã',6);
+          }
           const jump=combat.busy?(jumpInput.cancelPending(),null):jumpInput.consume(grounded);
           if(jump){velocity=9;jumpPhase=jump;jumpAge=0;jumpCount++;animate(jump==='air'?'jump_air':'jump_single',true);}
           jumpAge+=1/60;
@@ -253,7 +264,7 @@ export async function startGame(viewport, onExit, settings) {
         if(p.y<checkpointY-30||combat.needsRecovery){recover();p=body.translation();}
         const support = world.castRay(new RAPIER.Ray({x:p.x,y:p.y+.1,z:p.z},{x:0,y:-1,z:0}),10,true,undefined,undefined,collider);
         const room = support && collisionRegions.get(support.collider.handle); if (room && room !== activeRegion) selectRegion(room);
-        const reached=progress.visit([p.x,p.y,p.z]);if(reached.length){combat.markCheckpoint();breakables.markCheckpoint();pickups.markCheckpoint();notice('Checkpoint alcançado',3);}
+        const reached=progress.visit([p.x,p.y,p.z]);if(reached.length){combat.markCheckpoint();breakables.markCheckpoint();pickups.markCheckpoint();tutorials.markCheckpoint();notice('Checkpoint alcançado',3);}
         crash.position.set(p.x,p.y-.95,p.z); if (direction.lengthSq()&&!combat.busy) crash.rotation.y = Math.atan2(direction.x,direction.z);
         if(combat.animation)animate(combat.animation,true);
         else if(controller.computedGrounded()&&velocity<=0)animate(direction.lengthSq()>.01?'run':'idle');

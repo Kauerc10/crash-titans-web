@@ -6,9 +6,16 @@ export class GameplayAudio {
   if(!this.context){
    const Context=window.AudioContext||window.webkitAudioContext;if(!Context)return;
    this.context=new Context();this.output=this.context.createGain();this.output.connect(this.context.destination);this.apply();
-   this.loading=Promise.all(['swing','hit','hurt','enemy','death','leaf','pot','wood','metal','mojo','defeat','disappear','bodyfall','health','freejack'].map(async name=>{
-    try{const response=await fetch(`/assets/audio/combat/${name}.ogg`);if(!response.ok)throw Error(response.status);const buffer=await this.context.decodeAudioData(await response.arrayBuffer());if(!this.closed)this.buffers.set(name,buffer);}catch{/* Audio failure does not block gameplay. */}
-   }));
+   const combatSounds=['swing','hit','hurt','enemy','death','leaf','pot','wood','metal','mojo','defeat','disappear','bodyfall','health','freejack'];
+   const tutorialSounds=['basic','light_attack','air_jump','heavy_attack','multiplier','spin_hover','bounce_pad','chime','reward'];
+   this.loading=Promise.all([
+    ...combatSounds.map(async name=>{
+     try{const response=await fetch(`/assets/audio/combat/${name}.ogg`);if(!response.ok)throw Error(response.status);const buffer=await this.context.decodeAudioData(await response.arrayBuffer());if(!this.closed)this.buffers.set(name,buffer);}catch{/* Audio failure does not block gameplay. */}
+    }),
+    ...tutorialSounds.map(async name=>{
+     try{const response=await fetch(`/assets/audio/tutorial/${name}.ogg`);if(!response.ok)throw Error(response.status);const buffer=await this.context.decodeAudioData(await response.arrayBuffer());if(!this.closed)this.buffers.set(name,buffer);}catch{/* Audio failure does not block gameplay. */}
+    })
+   ]);
   }
   if(!this.paused)await this.context.resume().catch(()=>{});
  }
@@ -18,6 +25,8 @@ export class GameplayAudio {
   if(this.context.currentTime-(this.lastPlayed.get(name)??-10)<.06)return;this.lastPlayed.set(name,this.context.currentTime);
   const source=this.context.createBufferSource();source.buffer=this.buffers.get(name);source.connect(this.output);this.sources.add(source);source.onended=()=>{this.sources.delete(source);source.disconnect();};source.start();this.playCount++;
  }
+ playTutorial(name){this.play(name);}
+ playFrontEnd(name){this.play(name);}
  event(event){
   if(event.type==='enemyHit'){
    this.play(event.killed?'defeat':'hit');
@@ -41,6 +50,8 @@ export class GameplayAudio {
    this.play('freejack');
   }else if(event.type==='propBroken'||event.type==='propHit'||event.type==='propBlocked'&&event.sound!=='wood'){
    this.play(event.sound);
+  }else if(event.type==='tutorialStarted'){
+   this.play(event.audio||'chime');
   }
  }
  clear(){for(const source of this.sources){source.stop();source.disconnect();}this.sources.clear();}

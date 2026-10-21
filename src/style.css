@@ -203,3 +203,11 @@ kbd { color: #fff0b7; font: 700 14px/1.8 SystemUI, sans-serif; min-width: 33px; 
 .hud-accessible { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 @keyframes hud-pulse { to { opacity:.45; } }
 @media (prefers-reduced-motion:reduce) { .native-hud * { animation:none!important; transition:none!important; } }
+
+.hud-tutorial { position:absolute; left:50%; top:calc(76px * var(--hud-scale,1)); transform:translateX(-50%) scale(var(--hud-scale,1)); transform-origin:top center; width:520px; max-width:90%; pointer-events:none; z-index:10; display:flex; flex-direction:column; align-items:center; }
+.hud-tutorial-banner { position:relative; width:100%; display:flex; flex-direction:column; align-items:center; background:url('/assets/hud/message_bar_background.webp') center/cover no-repeat; padding:12px 24px; border-radius:8px; box-shadow:0 6px 16px #000a; }
+.hud-tutorial-title { font:bold 18px 'Trebuchet MS',sans-serif; color:#ffdd33; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px; text-shadow:0 2px 4px #000; }
+.hud-tutorial-content { display:flex; align-items:center; gap:16px; width:100%; }
+.hud-tutorial-icon { width:54px; height:54px; flex-shrink:0; filter:drop-shadow(0 2px 4px #000b); }
+.hud-tutorial-text { font:16px Arial,sans-serif; color:#ffffff; line-height:1.4; text-shadow:0 1px 3px #000, 0 0 6px #000; }
+.hud-tutorial-divider { width:80%; height:8px; opacity:0.8; margin-top:4px; }
