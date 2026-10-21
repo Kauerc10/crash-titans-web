@@ -7,15 +7,15 @@ export const combatTuning=Object.freeze({playerHealth:combatRules.player.maxHeal
 const distance=(a,b)=>Math.hypot(a[0]-b[0],a[2]-b[2]);
 export class Combat {
  constructor(data,durations={}){this.data=data;this.durations=durations;this.cleared=new Set();this.savedCleared=new Set();this.generation=0;this.resetToCheckpoint();}
- resetToCheckpoint(){this.cleared=new Set(this.savedCleared);this.enemies=[];this.encounter=null;this.attack=null;this.queued=false;this.combo=-1;this.sinceAttack=10;this.needsRecovery=false;this.player={health:combatTuning.playerHealth,invulnerable:0,hitTime:0,deathTime:0};this.events=[];this.generation++;}
+ resetToCheckpoint(){this.cleared=new Set(this.savedCleared);this.enemies=[];this.encounter=null;this.presentation=null;this.attack=null;this.queued=false;this.combo=-1;this.sinceAttack=10;this.needsRecovery=false;this.player={health:combatTuning.playerHealth,invulnerable:0,hitTime:0,deathTime:0};this.events=[];this.generation++;}
  markCheckpoint(){this.savedCleared=new Set(this.cleared);}
- requestAttack(){if(this.player.health>0&&this.player.hitTime<=0)this.queued=true;}
+ requestAttack(){if(!this.presentation&&this.player.health>0&&this.player.hitTime<=0)this.queued=true;}
  damagePlayer(amount){
   if(this.player.health<=0||this.player.invulnerable>0)return false;
   this.player.health=Math.max(0,this.player.health-amount);this.player.invulnerable=combatTuning.invulnerability;this.player.hitTime=.35;this.attack=null;this.queued=false;
   this.events.push({type:this.player.health===0?'playerDead':'playerHit'});return true;
  }
- get busy(){return this.player.health<=0||this.player.hitTime>0||!!this.attack;}
+ get busy(){return !!this.presentation||this.player.health<=0||this.player.hitTime>0||!!this.attack;}
  get propAttack(){const strike=this.attack?.activeStrike;if(!strike)return null;strike.age=this.attack.age;return strike;}
  get animation(){return this.player.health<=0?'death':this.player.hitTime>0?'impact_light':this.attack?.clip||null;}
  step(dt,player){
@@ -23,7 +23,15 @@ export class Combat {
   if(this.player.health<=0){this.player.deathTime+=dt;this.needsRecovery=this.player.deathTime>=(this.durations.death||2);for(const e of this.enemies)e.motion=[0,0];return events;}
   if(!this.encounter){
    const source=this.data.encounters.find(e=>e.id==='L1_E1_Combat2'&&!this.cleared.has(e.id)&&containsVolume(this.data.volumes[e.trigger],player.position));
-   if(source){this.encounter=source.id;this.enemies=source.spawns.map((s,i)=>({id:`${this.generation}:${source.id}:${i}`,position:[...this.data.locators[s.locator].position],yaw:this.data.locators[s.locator].yaw||0,health:combatTuning.enemyHealth,state:'idle',age:0,motion:[0,0],hitDone:false,animation:'idle_combat'}));events.push({type:'spawn'});}
+   if(source){this.encounter=source.id;this.enemies=source.spawns.map((s,i)=>({id:`${this.generation}:${source.id}:${i}`,sourceName:s.name,position:[...this.data.locators[s.locator].position],yaw:this.data.locators[s.locator].yaw||0,health:combatTuning.enemyHealth,state:'idle',age:0,motion:[0,0],hitDone:false,animation:'idle_combat'}));events.push({type:'spawn'});if(source.presentation){this.presentation={...source.presentation,age:0};events.push({type:'presentationStarted',id:this.presentation.id});}}
+  }
+  if(this.presentation){
+   const p=this.presentation;p.age=Number.isFinite(player.presentationTime)?Math.max(p.age,player.presentationTime):p.age+dt;
+   const line=p.lines.find(line=>p.age>=line.start&&p.age<line.end);
+   for(const enemy of this.enemies){enemy.motion=[0,0];enemy.animation=enemy.sourceName===line?.actor?'talk':'idle_combat';}
+   if(p.age<p.duration)return events;
+   events.push({type:'presentationEnded',id:p.id});this.presentation=null;this.queued=false;
+   for(const enemy of this.enemies)enemy.animation='idle_combat';
   }
   if(this.queued&&!this.attack&&this.player.hitTime<=0&&player.grounded){
    this.combo=this.sinceAttack<.75?(this.combo+1)%3:0;const clip=`attack_lite_${'ABC'[this.combo]}`;
