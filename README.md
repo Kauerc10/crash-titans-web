@@ -52,7 +52,7 @@ Esse comando prepara apenas os menus. Outros conversores preparam personagens, m
 
 ## Planejamento e evidências
 
-O trabalho é acompanhado nas [Issues](https://github.com/Kauerc10/crash-titans-web/issues). O próximo pacote cobre o primeiro encontro completo e o percurso até a primeira passagem obrigatória com Spike; a especificação e os tickets estão em revisão antes de publicação.
+O trabalho é acompanhado nas [Issues](https://github.com/Kauerc10/crash-titans-web/issues). O próximo pacote cobre o primeiro encontro completo e o percurso até a primeira passagem obrigatória com Spike; a [especificação aprovada e os 12 tickets com dependências](docs/planning/README.md) estão publicados nas Issues.
 
 - [Roadmap do episódio 1](docs/episode-one-roadmap.md)
 - [HUD e dados de combate](docs/hud-combat-milestone.md)
