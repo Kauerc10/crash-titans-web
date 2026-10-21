@@ -5,8 +5,21 @@ import { combatRules } from './combat-rules.js';
 // Reach, pursuit, stagger, input grace and invulnerability are native tuning.
 export const combatTuning=Object.freeze({playerHealth:combatRules.player.maxHealth,enemyHealth:combatRules.enemy.maxHealth,damage:combatRules.attacks.attack_lite_A[0].damage,enemyDamage:combatRules.attacks.attack_light[0].damage,reach:2.15,enemyReach:1.65,enemySpeed:3.2,invulnerability:.8,enemyHitStagger:.45,enemyDeathDuration:1.8});
 const distance=(a,b)=>Math.hypot(a[0]-b[0],a[2]-b[2]);
+
+// Chiratta drops: 7 c_mojoS guaranteed; negative count -5 slots give 5% freeJack, 4.75% health (mutually exclusive)
+export function calculateEnemyDrops(rng=Math.random){
+ const drops=[{type:'c_mojoS',count:7}];
+ let negativeWon=false;
+ if(rng()<.05){negativeWon=true;drops.push({type:'c_freeJack',count:1});}
+ if(!negativeWon&&rng()<.05){drops.push({type:'c_health',count:1});}
+ return drops;
+}
+
 export class Combat {
- constructor(data,durations={}){this.data=data;this.durations=durations;this.cleared=new Set();this.savedCleared=new Set();this.generation=0;this.resetToCheckpoint();}
+ constructor(data,durations={},options={}){
+  this.data=data;this.durations=durations;this.rng=options.rng||durations.rng||Math.random;
+  this.cleared=new Set();this.savedCleared=new Set();this.generation=0;this.resetToCheckpoint();
+ }
  resetToCheckpoint(){this.cleared=new Set(this.savedCleared);this.enemies=[];this.encounter=null;this.presentation=null;this.attack=null;this.queued=false;this.combo=-1;this.sinceAttack=10;this.needsRecovery=false;this.player={health:combatTuning.playerHealth,invulnerable:0,hitTime:0,deathTime:0};this.events=[];this.generation++;}
  markCheckpoint(){this.savedCleared=new Set(this.cleared);}
  requestAttack(){if(!this.presentation&&this.player.health>0&&this.player.hitTime<=0)this.queued=true;}
@@ -14,6 +27,12 @@ export class Combat {
   if(this.player.health<=0||this.player.invulnerable>0)return false;
   this.player.health=Math.max(0,this.player.health-amount);this.player.invulnerable=combatTuning.invulnerability;this.player.hitTime=.35;this.attack=null;this.queued=false;
   this.events.push({type:this.player.health===0?'playerDead':'playerHit'});return true;
+ }
+ healPlayer(amount){
+  if(this.player.health<=0)return 0;
+  const before=this.player.health;
+  this.player.health=Math.min(combatTuning.playerHealth,this.player.health+amount);
+  return this.player.health-before;
  }
  get busy(){return !!this.presentation||this.player.health<=0||this.player.hitTime>0||!!this.attack;}
  get propAttack(){const strike=this.attack?.activeStrike;if(!strike)return null;strike.age=this.attack.age;return strike;}
@@ -23,7 +42,7 @@ export class Combat {
   if(this.player.health<=0){this.player.deathTime+=dt;this.needsRecovery=this.player.deathTime>=(this.durations.death||2);for(const e of this.enemies)e.motion=[0,0];return events;}
   if(!this.encounter){
    const source=this.data.encounters.find(e=>e.id==='L1_E1_Combat2'&&!this.cleared.has(e.id)&&containsVolume(this.data.volumes[e.trigger],player.position));
-   if(source){this.encounter=source.id;this.enemies=source.spawns.map((s,i)=>({id:`${this.generation}:${source.id}:${i}`,sourceName:s.name,position:[...this.data.locators[s.locator].position],yaw:this.data.locators[s.locator].yaw||0,health:combatTuning.enemyHealth,state:'idle',age:0,motion:[0,0],hitDone:false,animation:'idle_combat'}));events.push({type:'spawn'});if(source.presentation){this.presentation={...source.presentation,age:0};events.push({type:'presentationStarted',id:this.presentation.id});}}
+   if(source){this.encounter=source.id;this.enemies=source.spawns.map((s,i)=>({id:`${this.generation}:${source.id}:${i}`,sourceName:s.name,position:[...this.data.locators[s.locator].position],yaw:this.data.locators[s.locator].yaw||0,health:combatTuning.enemyHealth,state:'idle',age:0,motion:[0,0],hitDone:false,rewardEmitted:false,deathDone:false,animation:'idle_combat'}));events.push({type:'spawn'});if(source.presentation){this.presentation={...source.presentation,age:0};events.push({type:'presentationStarted',id:this.presentation.id});}}
   }
   if(this.presentation){
    const p=this.presentation;p.age=Number.isFinite(player.presentationTime)?Math.max(p.age,player.presentationTime):p.age+dt;
@@ -51,7 +70,18 @@ export class Combat {
   }
   for(const e of this.enemies){
    e.age+=dt;e.motion=[0,0];
-   if(e.health<=0)continue;
+   if(e.health<=0){
+    if(!e.rewardEmitted&&e.age>=.6){
+     e.rewardEmitted=true;
+     const drops=calculateEnemyDrops(this.rng);
+     events.push({type:'enemyReward',id:e.id,position:[...e.position],drops});
+    }
+    if(!e.deathDone&&e.age>=(this.durations.enemyDeath||combatTuning.enemyDeathDuration)){
+     e.deathDone=true;
+     events.push({type:'enemyDeathDone',id:e.id});
+    }
+    continue;
+   }
    if(e.state==='hit'){if(e.age<(this.durations.hitStagger||combatTuning.enemyHitStagger))continue;e.state='idle';e.age=0;}
    const d=distance(e.position,player.position),height=Math.abs(e.position[1]-player.position[1]);
    if(e.state==='attack'){

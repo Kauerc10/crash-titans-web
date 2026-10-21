@@ -166,10 +166,11 @@ export async function startGame(viewport, onExit, settings) {
     const propData=await json('/assets/props/episode-one.json'),propSources=new Map(),pickupSources=new Map();
     const propUrls=[...new Set(Object.values(propData.definitions).flatMap(d=>d.states.map(s=>s.model).filter(Boolean)))];
     await Promise.all(propUrls.map(async url=>{const source=add(await loader.loadAsync(url));if(!source)return;source.scene.visible=false;propSources.set(url,source);}));
-    await Promise.all(Object.entries(propData.pickupTypes).map(async ([type,definition])=>{const source=add(await loader.loadAsync(definition.model));if(!source)return;source.scene.visible=false;pickupSources.set(type,source);}));
     if(stopped)return;
     breakables=new Breakables(propData);props=new PropActors(scene,propSources,propData,world,RAPIER);
-    pickups=new Pickups(propData);pickupActors=new PickupActors(scene,pickupSources);
+    pickups=new Pickups(propData);
+    await Promise.all(Object.entries(pickups.types).map(async ([type,definition])=>{try{const source=add(await loader.loadAsync(definition.model));if(!source)return;source.scene.visible=false;pickupSources.set(type,source);}catch(e){console.warn('Pickup model load failed:',definition.model,e);}}));
+    pickupActors=new PickupActors(scene,pickupSources);
     // Source shadow actors are projection inputs, not opaque scene geometry.
     // Keep them out until the original projected-shadow pass is implemented.
     await Promise.all(runtime.actors.filter(a => a.url && !a.name.endsWith('_shadow')).map(async actor => {
@@ -237,7 +238,7 @@ export async function startGame(viewport, onExit, settings) {
           events.push(...breakables.step(combat.propAttack,{position:[pp.x,pp.y-.95,pp.z],yaw:crash.rotation.y}));
           for(const event of events)pickups.spawn(event);
           events.push(...pickups.step(1/60,[pp.x,pp.y-.95,pp.z]));props.sync(breakables);
-          for(const event of events){if(event.type==='presentationStarted'){ambientAudio.currentTime=0;ambientAudio.play().catch(showError);notice('Conversa dos Chirattas',combat.presentation.duration);}if(event.type==='presentationEnded'){ambientAudio.pause();notice('Derrote os Chirattas • J: ataque leve',5);}gameplayHud.event(event,gameplayTime);effects.event(event);if(event.type==='spawn')notice('Derrote os Chirattas • J: ataque leve',5);if(event.type==='cleared')notice('Encontro vencido',4);if(event.type==='propBlocked')notice('Este objeto exige mais força',2);}
+          for(const event of events){if(event.type==='healthCollected')combat.healPlayer(event.value);if(event.type==='presentationStarted'){ambientAudio.currentTime=0;ambientAudio.play().catch(showError);notice('Conversa dos Chirattas',combat.presentation.duration);}if(event.type==='presentationEnded'){ambientAudio.pause();notice('Derrote os Chirattas • J: ataque leve',5);}gameplayHud.event(event,gameplayTime);effects.event(event);if(event.type==='spawn')notice('Derrote os Chirattas • J: ataque leve',5);if(event.type==='cleared')notice('Encontro vencido',4);if(event.type==='propBlocked')notice('Este objeto exige mais força',2);}
           const jump=combat.busy?(jumpInput.cancelPending(),null):jumpInput.consume(grounded);
           if(jump){velocity=9;jumpPhase=jump;jumpAge=0;jumpCount++;animate(jump==='air'?'jump_air':'jump_single',true);}
           jumpAge+=1/60;
