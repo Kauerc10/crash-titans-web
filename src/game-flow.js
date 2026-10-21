@@ -13,6 +13,7 @@ import { PickupActors } from './pickup-actors.js';
 import { Combat, combatTuning } from './combat.js';
 import { GameplayHud } from './gameplay-hud.js';
 import { EnemyActors } from './enemy-actors.js';
+import { GameplayEffects } from './gameplay-effects.js';
 
 const base = '/assets/levels/l1-e1/';
 const json = async url => { const r = await fetch(url); if (!r.ok) throw Error(`${url}: ${r.status}`); return r.json(); };
@@ -38,7 +39,7 @@ export async function startGame(viewport, onExit, settings) {
   const keys = new Set(), resources = new Set();
   const jumpInput = new JumpInput(); let progress,follow,noticeUntil=0,gameplayTime=0,jumpCount=0,recoveryCount=0,spaceHeld=false;
   let breakables,props,pickups,pickupActors;
-  let combat,enemies,padAttackDown=false;
+  let combat,enemies,visuals,padAttackDown=false;
   function updateHud(){if(combat)gameplayHud.update(combat,pickups,gameplayTime);}
   const padJumpHeld=()=>[...(navigator.getGamepads?.()||[])].some(p=>p?.mapping==='standard'&&p.buttons[0]?.pressed);
   const occluders=[];
@@ -58,10 +59,10 @@ export async function startGame(viewport, onExit, settings) {
     if (stopped) return; stopped = true; cancelAnimationFrame(frameId); dialogue?.pause(); ambientAudio?.pause(); observer.disconnect();
     document.removeEventListener('keydown', keyDown); document.removeEventListener('keyup', keyUp); window.removeEventListener('blur', blur);
     resources.forEach(o => { o.geometry?.dispose(); for (const m of [].concat(o.material || [])) { for (const v of Object.values(m)) if (v?.isTexture) v.dispose(); m.dispose(); } });
-    pickupActors?.clear();props?.clear();effects.stop();window.removeEventListener('game-audio-settings',settingsChanged);enemies?.clear();renderer?.dispose(); world?.free(); root.remove(); onExit();
+    pickupActors?.clear();props?.clear();visuals?.dispose();effects.stop();window.removeEventListener('game-audio-settings',settingsChanged);enemies?.clear();renderer?.dispose(); world?.free(); root.remove(); onExit();
   }
   action('Voltar ao menu', stop);
-  const pauseButton = action('Pausar', () => { paused = !paused; effects.pause(paused);keys.clear();
+  const pauseButton = action('Pausar', () => { paused = !paused; if(paused)visuals?.clear(); effects.pause(paused);keys.clear();
     jumpInput.suspend();
     const heldPad=padJumpHeld();
     padAttackDown=[...(navigator.getGamepads?.()||[])].some(p=>p?.buttons[2]?.pressed);
@@ -75,7 +76,7 @@ export async function startGame(viewport, onExit, settings) {
     body.setTranslation({x:checkpoint.position[0],y:checkpoint.position[1]+.95,z:checkpoint.position[2]},true);
     crash.rotation.y=checkpoint.yaw;velocity=0;accumulator=0;keys.clear();spaceHeld=false;jumpInput.reset();follow.reset();
     recoveryCount++;
-    ambientAudio?.pause();if(ambientAudio)ambientAudio.currentTime=0;effects.clear();pickups?.resetToCheckpoint();gameplayHud.reset(pickups?.total||0);breakables?.resetToCheckpoint();props?.sync(breakables);combat?.resetToCheckpoint();enemies?.clear();updateHud();
+    ambientAudio?.pause();if(ambientAudio)ambientAudio.currentTime=0;visuals?.clear();effects.clear();pickups?.resetToCheckpoint();gameplayHud.reset(pickups?.total||0);breakables?.resetToCheckpoint();props?.sync(breakables);combat?.resetToCheckpoint();enemies?.clear();updateHud();
     notice('Retomando do último checkpoint',3);
   }
   function showError(e) { status.hidden = false; status.textContent = `Falha ao carregar: ${e.message}. Volte ao menu para tentar novamente.`; }
@@ -86,6 +87,7 @@ export async function startGame(viewport, onExit, settings) {
   const scene = new THREE.Scene(); scene.background = new THREE.Color(0x89b8ca);
   scene.add(new THREE.HemisphereLight(0xffffff,0x7c725f,2));
   const sun = new THREE.DirectionalLight(0xffffff,2); sun.position.set(-20,50,30); scene.add(sun);
+  visuals=new GameplayEffects(scene);
   const camera = new THREE.PerspectiveCamera(65, 4 / 3, .1, 1800);
   const observer = new ResizeObserver(() => { if (!renderer) return; const w = root.clientWidth, h = root.clientHeight; renderer.setSize(w,h);gameplayHud.resize(w,h); camera.aspect = w/h; camera.updateProjectionMatrix(); }); observer.observe(root);
   let crash, playerAnimation, activeClip, body, collider, controller, velocity = 0, accumulator = 0,jumpPhase='ground',jumpAge=0;
@@ -238,7 +240,7 @@ export async function startGame(viewport, onExit, settings) {
           events.push(...breakables.step(combat.propAttack,{position:[pp.x,pp.y-.95,pp.z],yaw:crash.rotation.y}));
           for(const event of events)pickups.spawn(event);
           events.push(...pickups.step(1/60,[pp.x,pp.y-.95,pp.z]));props.sync(breakables);
-          for(const event of events){if(event.type==='healthCollected')combat.healPlayer(event.value);if(event.type==='presentationStarted'){ambientAudio.currentTime=0;ambientAudio.play().catch(showError);notice('Conversa dos Chirattas',combat.presentation.duration);}if(event.type==='presentationEnded'){ambientAudio.pause();notice('Derrote os Chirattas • J: ataque leve',5);}gameplayHud.event(event,gameplayTime);effects.event(event);if(event.type==='spawn')notice('Derrote os Chirattas • J: ataque leve',5);if(event.type==='cleared')notice('Encontro vencido',4);if(event.type==='propBlocked')notice('Este objeto exige mais força',2);}
+          for(const event of events){if(event.type==='healthCollected')combat.healPlayer(event.value);if(event.type==='presentationStarted'){ambientAudio.currentTime=0;ambientAudio.play().catch(showError);notice('Conversa dos Chirattas',combat.presentation.duration);}if(event.type==='presentationEnded'){ambientAudio.pause();notice('Derrote os Chirattas • J: ataque leve',5);}gameplayHud.event(event,gameplayTime);effects.event(event);visuals?.event(event,[pp.x,pp.y-.95,pp.z]);if(event.type==='spawn')notice('Derrote os Chirattas • J: ataque leve',5);if(event.type==='cleared')notice('Encontro vencido',4);if(event.type==='propBlocked')notice('Este objeto exige mais força',2);}
           const jump=combat.busy?(jumpInput.cancelPending(),null):jumpInput.consume(grounded);
           if(jump){velocity=9;jumpPhase=jump;jumpAge=0;jumpCount++;animate(jump==='air'?'jump_air':'jump_single',true);}
           jumpAge+=1/60;
@@ -260,7 +262,7 @@ export async function startGame(viewport, onExit, settings) {
         enemies.render(combat.enemies,dt);updateHud();
         camera.fov = 65; camera.updateProjectionMatrix();follow.update(crash.position,dt,occluders);
       }
-      sky.scene.position.copy(camera.position); props?.render(breakables,phase==='play',camera);pickupActors?.render(pickups,phase==='play',camera,gameplayTime);renderer.render(scene,camera);
+      sky.scene.position.copy(camera.position); props?.render(breakables,phase==='play',camera);pickupActors?.render(pickups,phase==='play',camera,gameplayTime);visuals?.update(dt,camera);renderer.render(scene,camera);
       root.dataset.phase = phase;
     }
     frameId = requestAnimationFrame(tick);

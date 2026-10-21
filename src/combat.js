@@ -63,7 +63,7 @@ export class Combat {
     const d=distance(e.position,player.position),dx=e.position[0]-player.position[0],dz=e.position[2]-player.position[2];
     const facing=d<.01?1:(dx*Math.sin(player.yaw)+dz*Math.cos(player.yaw))/d;
     if(e.health>0&&!strike.hit.has(e.id)&&d<=combatTuning.reach&&Math.abs(e.position[1]-player.position[1])<1.4&&facing>.15){
-     strike.hit.add(e.id);e.health=Math.max(0,e.health-strike.damage);e.state=e.health?'hit':'dead';e.age=0;e.motion=[0,0];e.animation=e.health?'impact_light':'impact_heavy';events.push({type:'enemyHit',id:e.id,killed:e.health===0,damage:strike.damage});
+     strike.hit.add(e.id);e.health=Math.max(0,e.health-strike.damage);e.state=e.health?'hit':'dead';e.age=0;e.motion=[0,0];e.animation=e.health?'impact_light':'impact_heavy';events.push({type:'enemyHit',id:e.id,killed:e.health===0,damage:strike.damage,position:[...e.position]});
     }
    }
    if(a.age>=a.duration){this.attack=null;this.sinceAttack=0;}
