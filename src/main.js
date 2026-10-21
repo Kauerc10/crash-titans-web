@@ -399,5 +399,5 @@ document.querySelector('#fullscreen').addEventListener('click', async () => {
   try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.querySelector('#game').requestFullscreen(); } catch { /* Unsupported on some mobile browsers. */ }
 });
 
-try { await initFonts(); applySettings(); render(); startPadPolling(); if(['combat-test','interactions-test'].some(key=>new URLSearchParams(location.search).get(key)==='1'))enterGame(); }
+try { await initFonts(); applySettings(); render(); startPadPolling(); if(['combat-test','interactions-test','play','game'].some(key=>new URLSearchParams(location.search).get(key)==='1'))enterGame(); }
 catch (err) { screen.replaceChildren(note(settings.language === 'pt' ? 'Não foi possível carregar o menu. Reabra pelo servidor local.' : 'Could not load the menu. Open it through the local server.')); console.error(err); }
