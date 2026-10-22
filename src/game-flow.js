@@ -28,6 +28,17 @@ export function sampleTrack(track, frame, fallback) {
 }
 const vector = a => new THREE.Vector3(a[0], a[1], -a[2]);
 
+export const regionNeighbors = {
+  r7: ['r7', 'r1'],
+  r1: ['r7', 'r1', 'r2'],
+  r2: ['r1', 'r2', 'r3'],
+  r3: ['r2', 'r3', 'r4'],
+  r4: ['r3', 'r4', 'r5'],
+  r5: ['r4', 'r5', 'r6'],
+  r6: ['r5', 'r6'],
+  mojo: ['mojo'],
+};
+
 export async function startGame(viewport, onExit, settings) {
   const root = document.createElement('div'); root.className = 'native-game'; viewport.append(root);
   const status = document.createElement('div'); status.className = 'native-status'; root.append(status);
@@ -46,10 +57,11 @@ export async function startGame(viewport, onExit, settings) {
   const padJumpHeld=()=>[...(navigator.getGamepads?.()||[])].some(p=>p?.mapping==='standard'&&p.buttons[0]?.pressed);
   const occluders=[];
   const regionObjects=new Map();
-  const collisionRegions = new Map(); let activeRegion = 'r1';
+  const collisionRegions = new Map(); let activeRegion = 'r7';
   function selectRegion(name) {
     activeRegion = name;
-    for(const [region,object] of regionObjects)object.visible=region===name;
+    const visibleSet = new Set(regionNeighbors[name] || [name]);
+    for(const [region,object] of regionObjects)object.visible = visibleSet.has(region);
     occluders.length=0;
     for(const object of regionObjects.values()){
       object.traverse(o=>{
@@ -173,7 +185,7 @@ export async function startGame(viewport, onExit, settings) {
       return add(gltf);
     }
     await Promise.all([...Array.from({length:7},(_,i)=>`r${i+1}`),'mojo'].map(name=>loader.loadAsync(base+`${name}.gltf`).then(g=>{g.scene.name=name==='mojo'?'regionmojo':`region${name.slice(1)}`;regionObjects.set(name,g.scene);return staticRegion(g);})));
-    selectRegion('r1');
+    selectRegion('r7');
     const sky = add(await loader.loadAsync(base+'skybox.gltf')); sky.scene.name = 'skybox';
     sky.scene.traverse(o => { if(o.isMesh) { o.material.depthWrite = false; o.renderOrder = -100; } });
     const player = add(await loader.loadAsync('/assets/characters/crash/crash.glb')); if (stopped) return;
@@ -265,7 +277,7 @@ export async function startGame(viewport, onExit, settings) {
             if(event.type==='presentationEnded'){ambientAudio.pause();skipAmb.hidden=true;follow.reset();notice('Derrote os Chirattas • J: ataque leve',5);}
             gameplayHud.event(event,gameplayTime);effects.event(event);visuals?.event(event,[pp.x,pp.y-.95,pp.z]);
             if(event.type==='spawn')notice('Derrote os Chirattas • J: ataque leve',5);
-            if(event.type==='cleared'){progress.complete(event.id);notice('Encontro vencido',4);}
+            if(event.type==='cleared'){progress.complete(event.id);if(event.id==='L1_E1_Combat2'){const jumpHint=tutorials.inputMode==='gamepad'?'[✕]':'[Espaço]';notice(`Encontro vencido! Suba as pedras à direita ${jumpHint}`,6);}else notice('Encontro vencido',4);}
             if(event.type==='propBlocked')notice('Este objeto exige mais força',2);
           }
           const jump=combat.busy?(jumpInput.cancelPending(),null):jumpInput.consume(grounded);
