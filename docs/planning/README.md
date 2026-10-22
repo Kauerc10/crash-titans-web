@@ -69,8 +69,11 @@ Este pacote não conclui o episódio 1 inteiro. Não inclui mobile, outros titã
 
 ## Revisão corretiva de 22/10/2026
 
-A [especificação #15](https://github.com/Kauerc10/crash-titans-web/issues/15) corrige regressões de renderização, checkpoint, comandos, efeitos e teste público. #6 requer novo aceite da recuperação após vitória ainda não consolidada. #7 permanece parcial: seus testes anteriores injetavam posições, e a entrada em PlaySpike concluía uma apresentação ausente. Esses resultados não provam o percurso normal.
+A [especificação #15](https://github.com/Kauerc10/crash-titans-web/issues/15) corrige regressões de renderização, checkpoint, comandos, efeitos e teste público. #6 passou por novo aceite de recuperação antes/depois de consolidar, desde o menu com entradas reais; aguarda revisão/merge da correção para fechamento. #7 permanece parcial: seus testes anteriores injetavam posições, e a entrada em PlaySpike concluía uma apresentação ausente. Esses resultados não provam o percurso normal.
 
 #8 continua bloqueado pelo aceite real de #7, incluindo encontros intermediários, resgate de Aku Aku e cenas NIS26/NIS02. Corrigir a flag de proximidade não implementa esse percurso. O PR #14 deve continuar rascunho enquanto o pacote original até a passagem com Spike não cumprir seu aceite global. A correção #15 pode ter revisão independente sem declarar o pacote original completo.
 
 Core público e validação source são comandos separados. As evidências de navegador devem começar no menu e usar entradas reais; inspeção é somente observação. Veja [checkpoints](../encounter-checkpoint.md) e [limites da progressão](../spike-tutorial-progression.md).
+
+
+O [registro de validação de #15](../corrective-15-validation.md) cobre o primeiro encontro, checkpoint 3 e transição R1/R2. O novo PR corretivo pode fechar #15 e #6 ao ser integrado; #7 continua aberta e o PR #14 permanece rascunho. Nenhum desses resultados comprova o trajeto ainda ausente até Spike.
