@@ -1,77 +1,21 @@
-# Progressão de Tutoriais e Primeira Interação com Spike (Ticket #7 / Issue #7)
+# Tutoriais disponíveis e percurso até Spike — aceite pendente
 
-## 1. Visão Geral e Evidências da ROM PS2 (SLUS_215.83)
+## Correção de aceite (#7, #15)
 
-Este ticket implementa a continuidade da fase *Episode 1* a partir da vitória em `L1_E1_Combat2` e do Checkpoint 3 (`WhumpaE1LevelReset3`) ao longo de toda a rota de tutoriais e checkpoints intermediários até a entrada na arena do primeiro titã (`Spike`).
+A entrega anterior confundiu inventário recuperado com progressão implementada. Os testes que forneciam diretamente posições a TutorialManager e EpisodeProgress eram testes de regras; não caminharam pela fase. O fechamento anterior de #7 não comprova a prontidão de #8.
 
-### 1.1 Fontes Originais Recuperadas
-- **String Bibles P3D (Chunk `0x1800e`)**: Extraídas de `package\c1e387c7.p3d` e tabelas de hash `ingameU` / `ingameE` com módulo 65599:
-  - `Hint_Movement_PS2` (`USE THE LEFT ANALOG STICK TO WALK OR RUN. PRESS ✕ TO JUMP.`)
-  - `Hint_LightAttack` (`PRESS ▢ TO SMASH STUFF.`)
-  - `TUT_Mojo` (`THE ESSENCE OF LIFE ITSELF. COLLECT IT AND EARN REWARDS.`)
-  - `TUT_AirJump` (`PRESS THE JUMP BUTTON TWICE • ✕, ✕`)
-  - `TUT_BouncePad` (`JUMP AS YOU LAND ON A SPRINGY OBJECT • ✕`)
-  - `TUT_SpinHover` (`PRESS JUMP AND REPEATEDLY PRESS LIGHT ATTACK • ✕, ▢, ▢, ▢ . . .`)
-  - `Hint_BlockBreaker` (`PRESS AND HOLD △ TO BREAK AN ENEMY'S BLOCK.`)
-  - `TUT_Jacking` (`STUN AN ENEMY AND PRESS ◯ TO JACK • PRESS ◯ TO UNJACK`)
-- **Áudios de Tutoriais**: Extraídos de `ENGLISH.RCF` e `SOUND.RCF` via FFmpeg em formato `.ogg`:
-  - `basic.ogg`: `tutorial_basic_ps2.wav` (`sound\rsd\english\3\30102f5c89509fa9.rsd`)
-  - `light_attack.ogg`: `tutorial090_aku_ps2.wav` (`sound\rsd\english\5\5334156f483375e5.rsd`)
-  - `air_jump.ogg`: `tutorial003_aku_ps2.wav` (`sound\rsd\english\6\6ce4f92b7b64b829.rsd`)
-  - `heavy_attack.ogg`: `tutorial059_aku_ps2.wav` (`sound\rsd\english\8\82cfea49c5229be0.rsd`)
-  - `multiplier.ogg`: `tutorial159_aku_gen.wav` (`sound\rsd\english\a\af607e000d0e15b8.rsd`)
-  - `spin_hover.ogg`: `tutorial114_aku_ps2.wav` (`sound\rsd\english\b\b1311aa91964a3ec.rsd`)
-  - `bounce_pad.ogg`: `tutorial099_aku_ps2.wav` (`sound\rsd\english\b\b178225d6b4292ec.rsd`)
-  - `chime.ogg`: `button_01.wav` (`sound\rsd\3\314ba63ffd39f779.rsd`)
-- **Assets Gráficos do HUD**:
-  - `message_bar_background.webp` (faixa tribal de aviso)
-  - `tut_icon_crash.webp` (ícone original de perfil de Crash)
-  - `fe_divider_2_flipped_sharp.webp` (divisor ornamental)
+O percurso completo desde Combat2 até Spike **continua pendente**. Faltam encontros intermediários, resgate de Aku Aku e apresentações NIS26/NIS02. A entrada em PlaySpike não executa SpikeCinematic, não conclui esse objetivo e não anuncia um titã inexistente. O inventário original de volumes, textos e áudios permanece referência para implementação futura.
 
----
+## Comportamento disponível
 
-## 2. Instruções Contextuais para Teclado e Gamepad
+Tutoriais de movimento, ataque leve, Mojo e salto duplo usam o gerenciador de prompts. A troca de teclado/controle atualiza a dica ativa; a pausa conserva seu tempo; retry descarta dicas não consolidadas. A apresentação da dica não substitui a execução de uma mecânica.
 
-A classe `TutorialManager` detecta dinamicamente o método de entrada (`keyboard` vs `gamepad`):
-- **Teclado**:
-  - Movimento: WASD / Setas
-  - Salto / Salto duplo: ESPAÇO / ESPAÇO, ESPAÇO
-  - Ataque leve: J
-  - Quebra de bloqueio / Ataque pesado: Segurar K
-  - Montar no titã (Jack): L
-  - Spin Hover: ESPAÇO + J, J, J...
-- **Gamepad / Controle Padrão**:
-  - Movimento: Analógico esquerdo
-  - Salto / Salto duplo: ✕ (A) / ✕, ✕ (A, A)
-  - Ataque leve: ▢ (X)
-  - Quebra de bloqueio / Ataque pesado: Segurar △ (Y)
-  - Montar no titã (Jack): ◯ (B)
-  - Spin Hover: ✕ + ▢, ▢, ▢...
+Orientações de pesado carregado/quebra de bloqueio, montar, spin hover, bounce e multiplicador ainda não validadas não devem aparecer como ações disponíveis. K/Y deixa de executar o terceiro golpe leve: esse golpe permanece no combo leve. Textos recuperados dessas capacidades são inventário, não controles prontos.
 
-A troca de dispositivo atualiza imediatamente o texto da interface ativa sem reiniciar a duração do prompt nem interromper o controle do jogador.
+## Evidência e aceite
 
----
+- `npm run test:core`: regras com fixtures sintéticas de coordenadas inventadas. Exercita prompts, pausa, dispositivo, rollback e ausência de conclusão artificial de Spike.
+- `npm run test:source`: valida inventário extraído localmente, referências de volumes e locators. Exige recursos convertidos e não constitui um percurso jogado.
+- Aceite real de #7: partir do menu, usar apenas entradas do jogador, atravessar encontros e resgate efetivos e assistir/usar skip permitido das cenas implementadas. Inspeção pode observar estado; não pode teleportar, concluir objetivos ou iniciar gameplay diretamente.
 
-## 3. Não-Bloqueio e Ciclo de Vida dos Prompts
-
-- **Controle Ininterrupto**: Exibir uma dica ou aviso nunca paralisa o movimento, ataque ou pulo de Crash.
-- **Pausa Conforme as Regras**: Em caso de pausa (`pause(true)`), o tempo restante (`active.remaining`) é congelado e retomado sem perda ou extensão indevida após o despausar.
-- **Encerramento Automático**: O término do timer emite `tutorialEnded` e oculta a barra suavemente.
-
----
-
-## 4. Prevenção de Repetição e Rollback de Checkpoint
-
-- Tutoriais acionados entram em `completed`, garantindo que transitar novamente pelas pedras ou volumes não gere repetições spam.
-- Ao alcançar um checkpoint válido (`WhumpaE1LevelReset...`), `markCheckpoint()` consolida os tutoriais vistos.
-- Em caso de morte e retorno ao checkpoint (`resetToCheckpoint()`), os tutoriais consolidados antes do checkpoint permanecem marcados, evitando que o jogador tenha que rever dicas já absorvidas.
-
----
-
-## 5. Chegada à Interação com Spike (`PlaySpike`)
-
-- Volume: `PlaySpike` em `[-200.165, 91.980, -206.613]`.
-- Checkpoint prévio: `WhumpaE1LevelReset24` em `[-198.26, 77.67, -227.93]`.
-- Pré-requisitos:
-  - Tentativas de acionamento prematuro (antes de vencer `L1_E1_Combat2`) são rejeitadas com `spikeInteractionBlocked`.
-  - Chegada pelo percurso normal após vencer Combat 2 ativa `spikeInteractionReached` (`SpikeCinematic`), completando o objetivo e preparando o terreno para o Ticket #8 (combate com Spike).
+Nenhum teste por coordenadas, flag de proximidade ou teste de inventário satisfaz esse último aceite. Não fechar #7 até existir evidência reproduzível do percurso completo; #8 permanece bloqueado por ele.
