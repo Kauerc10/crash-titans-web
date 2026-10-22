@@ -88,7 +88,7 @@ export class Combat {
     }
     if(!e.deathDone&&e.age>=(this.durations.enemyDeath||combatTuning.enemyDeathDuration)){
      e.deathDone=true;
-     events.push({type:'enemyDeathDone',id:e.id});
+     events.push({type:'enemyDeathDone',id:e.id,position:[...e.position]});
     }
     continue;
    }
