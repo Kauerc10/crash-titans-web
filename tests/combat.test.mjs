@@ -94,3 +94,16 @@ test('enemy health is tracked internally and encounters complete once without du
  assert(events.some(e=>e.type==='cleared'));
  assert.equal(c.step(.01,player).filter(e=>e.type==='cleared').length,0);
 });
+
+test('heavy attack request triggers heavy clip and strikes enemies directly with block-break strength',()=>{
+ const c=new Combat(data);c.step(.01,player);
+ assert.equal(c.enemies[0].health,4);
+ const queued=c.requestHeavyAttack();
+ assert.equal(queued,true);
+ const events=c.step(.15,player);
+ assert(events.some(e=>e.type==='playerAttack'&&e.heavy===true));
+ assert.equal(c.attack.clip,'attack_lite_C');
+ assert.equal(c.enemies[0].health,2);
+ assert.equal(c.enemies[0].state,'hit');
+ assert.equal(c.enemies[0].animation,'impact_light');
+});

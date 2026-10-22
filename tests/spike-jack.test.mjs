@@ -87,6 +87,10 @@ test('No simultaneous Crash actions: Crash light attack combo is disabled while 
   assert.equal(attackAllowed, false);
   assert.equal(c.queued, false);
   assert.equal(c.attack, null);
+
+  const heavyAllowed = c.requestHeavyAttack();
+  assert.equal(heavyAllowed, false);
+  assert.equal(c.queuedHeavy, false);
 });
 
 test('Dismount: exits titan, restores idle state, and places Crash in valid rear position', () => {

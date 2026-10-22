@@ -51,7 +51,7 @@ export async function startGame(viewport, onExit, settings) {
   const keys = new Set(), resources = new Set();
   const jumpInput = new JumpInput(); let progress,follow,noticeUntil=0,gameplayTime=0,jumpCount=0,recoveryCount=0,spaceHeld=false;
   let breakables,props,pickups,pickupActors;
-  let combat,enemies,visuals,padAttackDown=false,padJackDown=false;
+  let combat,enemies,visuals,padAttackDown=false,padHeavyDown=false,padJackDown=false;
   let tutorials;
   function updateHud(){if(combat)gameplayHud.update(combat,pickups,gameplayTime,tutorials);}
   const padJumpHeld=()=>[...(navigator.getGamepads?.()||[])].some(p=>p?.mapping==='standard'&&p.buttons[0]?.pressed);
@@ -82,6 +82,7 @@ export async function startGame(viewport, onExit, settings) {
     jumpInput.suspend();
     const heldPad=padJumpHeld();
     padAttackDown=[...(navigator.getGamepads?.()||[])].some(p=>p?.buttons[2]?.pressed);
+    padHeavyDown=[...(navigator.getGamepads?.()||[])].some(p=>p?.buttons[3]?.pressed);
     if(!spaceHeld&&!heldPad)jumpInput.release();
     pauseButton.textContent = paused ? 'Continuar' : 'Pausar'; restart.hidden=phase!=='play'||!paused; if (phase === 'cinematic') paused ? dialogue.pause() : dialogue.play().catch(showError); if(combat?.presentation)paused?ambientAudio.pause():ambientAudio.play().catch(showError); });
   const skip = action('Pular cena', () => enterPlay()); skip.hidden = true;
@@ -105,6 +106,7 @@ export async function startGame(viewport, onExit, settings) {
     keys.add(e.code);
     if(e.code==='Space'&&!e.repeat){spaceHeld=true;if(phase==='play'&&!paused){if(combat?.presentation){combat.skipPresentation();ambientAudio?.pause();}else jumpInput.press();}}
     if(e.code==='KeyJ'&&!e.repeat&&phase==='play'&&!paused){if(combat?.presentation){combat.skipPresentation();ambientAudio?.pause();}else combat?.requestAttack();}
+    if(e.code==='KeyK'&&!e.repeat&&phase==='play'&&!paused){if(combat?.presentation){combat.skipPresentation();ambientAudio?.pause();}else combat?.requestHeavyAttack();}
     if(e.code==='Enter'&&!e.repeat&&phase==='play'&&!paused&&combat?.presentation){combat.skipPresentation();ambientAudio?.pause();}
     if (e.code === 'Escape' && !e.repeat) pauseButton.click();
   }
@@ -133,7 +135,7 @@ export async function startGame(viewport, onExit, settings) {
     velocity = 0;accumulator=0;jumpInput.reset();follow.reset();
     const entry=body.translation();progress.complete('NIS01');progress.setEntry([entry.x,entry.y-.95,entry.z],crash.rotation.y);
     hud.hidden=false;updateHud();
-    notice('WASD / setas: mover • Espaço: salto / salto duplo • J: ataque leve • Esc: pausa',8);
+    notice('WASD / setas: mover • Espaço: salto / salto duplo • J: ataque leve • K: ataque pesado • Esc: pausa',8);
     animate('idle');
   }
   try {
@@ -169,7 +171,7 @@ export async function startGame(viewport, onExit, settings) {
     }
     body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(57.412,45.556,52.091));
     collider = world.createCollider(RAPIER.ColliderDesc.capsule(.55,.4),body);
-    controller = world.createCharacterController(.03); controller.enableAutostep(.35,.2,true); controller.enableSnapToGround(.4);
+    controller = world.createCharacterController(.03); controller.setMaxSlopeClimbAngle(Math.PI*75/180); controller.setMinSlopeSlideAngle(Math.PI*75/180); controller.enableAutostep(.5,.25,true); controller.enableSnapToGround(.8);
     function staticRegion(gltf) {
       gltf.scene.updateMatrixWorld(true); const batches = new Map();
       gltf.scene.traverse(o => {
@@ -258,8 +260,11 @@ export async function startGame(viewport, onExit, settings) {
         if(pad&&(Math.abs(pad.axes[0]||0)>.2||Math.abs(pad.axes[1]||0)>.2||pad.buttons.some(b=>b?.pressed)))tutorials.setInputMode('gamepad');
         const padAttack=!!pad?.buttons[2]?.pressed;
         if(padAttack&&!padAttackDown){if(combat?.presentation){combat.skipPresentation();ambientAudio?.pause();}else combat.requestAttack();}
+        const padHeavy=!!pad?.buttons[3]?.pressed;
+        if(padHeavy&&!padHeavyDown){if(combat?.presentation){combat.skipPresentation();ambientAudio?.pause();}else combat.requestHeavyAttack();}
         if(pad?.buttons[9]?.pressed&&combat?.presentation){combat.skipPresentation();ambientAudio?.pause();}
         padAttackDown=padAttack;
+        padHeavyDown=padHeavy;
         const padJack=!!pad?.buttons[1]?.pressed;
         if((keys.has('KeyL')||padJack)&&!padJackDown&&body){const pp=body.translation();combat.requestJack([pp.x,pp.y-.95,pp.z]);}
         padJackDown=padJack;
@@ -301,7 +306,7 @@ export async function startGame(viewport, onExit, settings) {
         if(p.y<checkpointY-30||combat.needsRecovery){recover();p=body.translation();}
         const support = world.castRay(new RAPIER.Ray({x:p.x,y:p.y+.1,z:p.z},{x:0,y:-1,z:0}),10,true,undefined,undefined,collider);
         const room = support && collisionRegions.get(support.collider.handle); if (room && room !== activeRegion) selectRegion(room);
-        const reached=progress.visit([p.x,p.y,p.z]);if(reached.length){combat.markCheckpoint();breakables.markCheckpoint();pickups.markCheckpoint();tutorials.markCheckpoint();notice('Checkpoint alcançado',3);}
+        const reached=progress.visit([p.x,p.y,p.z]);if(reached.length){combat.markCheckpoint();breakables.markCheckpoint();pickups.markCheckpoint();tutorials.markCheckpoint();notice(reached.some(c=>c.id==='WhumpaE1LevelReset6')?'Checkpoint alcançado • Siga pela crista rochosa em frente':'Checkpoint alcançado',4);}
         if(combat.isJacked&&combat.jackedTitan){
           const titan=combat.jackedTitan;
           crash.position.set(titan.position[0],titan.position[1]+1.8,titan.position[2]);

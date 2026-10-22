@@ -44,7 +44,7 @@ export class Combat {
   this.enemies=structuredClone(this.savedEncounter?.enemies||[]);
   this.encounter=this.savedEncounter?.encounter||null;
   this.presentation=structuredClone(this.savedEncounter?.presentation||null);
-  this.attack=null;this.queued=false;this.combo=-1;this.sinceAttack=10;this.needsRecovery=false;
+  this.attack=null;this.queued=false;this.queuedHeavy=false;this.combo=-1;this.sinceAttack=10;this.needsRecovery=false;
   this.player={health:combatTuning.playerHealth,invulnerable:0,hitTime:0,deathTime:0};
   this.events=[];this.generation++;
   this.jackedTitan=this.savedEncounter?.jackedTitanId?this.enemies.find(e=>e.id===this.savedEncounter.jackedTitanId)||null:null;
@@ -55,11 +55,12 @@ export class Combat {
  }
  get isJacked(){return !!this.jackedTitan;}
  requestAttack(){if(!this.presentation&&!this.jackedTitan&&this.player.health>0&&this.player.hitTime<=0)this.queued=true;return !this.jackedTitan;}
+ requestHeavyAttack(){if(!this.presentation&&!this.jackedTitan&&this.player.health>0&&this.player.hitTime<=0)this.queuedHeavy=true;return !this.jackedTitan;}
  skipPresentation(){
   if(this.presentation){
    const id=this.presentation.id;
    this.presentation=null;
-   this.queued=false;
+   this.queued=false;this.queuedHeavy=false;
    for(const enemy of this.enemies)enemy.animation=enemy.isTitan?'idle':'idle_combat';
    this.events.push({type:'presentationEnded',id,skipped:true});
   }
@@ -127,7 +128,7 @@ export class Combat {
  }
  damagePlayer(amount){
   if(this.player.health<=0||this.player.invulnerable>0)return false;
-  this.player.health=Math.max(0,this.player.health-amount);this.player.invulnerable=combatTuning.invulnerability;this.player.hitTime=.35;this.attack=null;this.queued=false;
+  this.player.health=Math.max(0,this.player.health-amount);this.player.invulnerable=combatTuning.invulnerability;this.player.hitTime=.35;this.attack=null;this.queued=false;this.queuedHeavy=false;
   this.events.push({type:this.player.health===0?'playerDead':'playerHit'});return true;
  }
  healPlayer(amount){
@@ -183,10 +184,14 @@ export class Combat {
    const line=p.lines.find(line=>p.age>=line.start&&p.age<line.end);
    for(const enemy of this.enemies){enemy.motion=[0,0];enemy.animation=enemy.sourceName===line?.actor?'talk':enemy.isTitan?'idle':'idle_combat';}
    if(p.age<p.duration)return events;
-   events.push({type:'presentationEnded',id:p.id});this.presentation=null;this.queued=false;
+   events.push({type:'presentationEnded',id:p.id});this.presentation=null;this.queued=false;this.queuedHeavy=false;
    for(const enemy of this.enemies)enemy.animation=enemy.isTitan?'idle':'idle_combat';
   }
-  if(this.queued&&!this.attack&&this.player.hitTime<=0&&player.grounded){
+  if(this.queuedHeavy&&!this.attack&&this.player.hitTime<=0&&player.grounded){
+   const clip='attack_lite_C';
+   this.attack={clip,age:0,duration:this.durations[clip]||combatRules.durations[clip],strikes:combatRules.attacks[clip].map(s=>({...s,hit:new Set()})),heavy:true};
+   this.queuedHeavy=false;this.queued=false;this.sinceAttack=0;events.push({type:'playerAttack',heavy:true});
+  } else if(this.queued&&!this.attack&&this.player.hitTime<=0&&player.grounded){
    this.combo=this.sinceAttack<.75?(this.combo+1)%3:0;const clip=`attack_lite_${'ABC'[this.combo]}`;
    this.attack={clip,age:0,duration:this.durations[clip]||combatRules.durations[clip],strikes:combatRules.attacks[clip].map(s=>({...s,hit:new Set()}))};this.queued=false;events.push({type:'playerAttack'});
   }
