@@ -3,6 +3,35 @@ import assert from 'node:assert/strict';
 import { GameplayAudio } from '../src/gameplay-audio.js';
 import { GameplayEffects } from '../src/gameplay-effects.js';
 import * as THREE from 'three';
+import { Combat } from '../src/combat.js';
+
+test('defeat flash stays at the defeated Chiratta when Crash walks away during the death animation', () => {
+ const combat=new Combat({
+  encounters:[{id:'L1_E1_Combat2',trigger:'arena',spawns:[{name:'Chiratta1',locator:'enemy'}]}],
+  volumes:{arena:{position:[0,0,0],halfExtents:[5,5,5],rotation:[0,0,0]}},
+  locators:{enemy:{position:[0,0,1.3],yaw:0}}
+ },{}, {rng:()=>.5});
+ const player={position:[0,0,0],yaw:0,grounded:true};
+ for(let frame=0;frame<300&&!combat.cleared.size;frame++){
+  combat.requestAttack();combat.step(.02,player);
+ }
+ assert.equal(combat.cleared.size,1,'defeat through ordinary light attacks');
+ player.position=[20,0,20];
+ const events=combat.step(1.8,player);
+ const death=events.find(event=>event.type==='enemyDeathDone');
+ assert(death,'death animation completes after Crash moves away');
+ const scene=new THREE.Scene(),fx=new GameplayEffects(scene);
+ fx.event(death,player.position);fx.update(0);
+ const flash=scene.children[0].children[1],matrix=new THREE.Matrix4(),position=new THREE.Vector3();
+ assert.equal(flash.count,10);
+ for(let i=0;i<flash.count;i++){
+  flash.getMatrixAt(i,matrix);position.setFromMatrixPosition(matrix);
+  assert.equal(position.x,0);assert.equal(position.y,.5);
+  assert(Math.abs(position.z-1.3)<1e-6);
+ }
+ assert.notStrictEqual(death.position,combat.enemies[0].position,'event owns its position snapshot');
+ fx.dispose();
+});
 
 test('rendered bursts use recovered textures, event colors and fading opacity, then release resources', async () => {
  const loaded=[];
