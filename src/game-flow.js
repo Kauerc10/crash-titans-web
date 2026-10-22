@@ -302,17 +302,28 @@ export async function startGame(viewport, onExit, settings) {
         const support = world.castRay(new RAPIER.Ray({x:p.x,y:p.y+.1,z:p.z},{x:0,y:-1,z:0}),10,true,undefined,undefined,collider);
         const room = support && collisionRegions.get(support.collider.handle); if (room && room !== activeRegion) selectRegion(room);
         const reached=progress.visit([p.x,p.y,p.z]);if(reached.length){combat.markCheckpoint();breakables.markCheckpoint();pickups.markCheckpoint();tutorials.markCheckpoint();notice('Checkpoint alcançado',3);}
-        crash.position.set(p.x,p.y-.95,p.z); if (direction.lengthSq()&&!combat.busy) crash.rotation.y = Math.atan2(direction.x,direction.z);
-        if(combat.animation)animate(combat.animation,true);
-        else if(controller.computedGrounded()&&velocity<=0)animate(direction.lengthSq()>.01?'run':'idle');
-        else {const falling=fallingAnimation(jumpPhase,jumpAge,velocity);if(falling)animate(falling);}
-        playerAnimation.update(dt);
-        enemies.render(combat.enemies,dt);updateHud();
-        if(combat?.presentation){
-          skipAmb.hidden=false;skipAmb.textContent=tutorials.inputMode==='gamepad'?'Pular conversa [✕ / ▢]':'Pular conversa [Enter / J / Espaço]';
-          camera.fov=50;camera.updateProjectionMatrix();camera.position.set(44.54,12.8,4.2);camera.lookAt(44.54,11.8,-3.93);
-        } else {
-          skipAmb.hidden=true;camera.fov = 65; camera.updateProjectionMatrix();follow.update(crash.position,dt,occluders);
+        if(combat.isJacked&&combat.jackedTitan){
+          const titan=combat.jackedTitan;
+          crash.position.set(titan.position[0],titan.position[1]+1.8,titan.position[2]);
+          crash.rotation.y=titan.yaw;
+          animate(direction.lengthSq()>.01?'run':'idle');
+          playerAnimation.update(dt);
+          enemies.render(combat.enemies,dt);updateHud();
+          skipAmb.hidden=true;camera.fov = 65; camera.updateProjectionMatrix();
+          follow.update(new THREE.Vector3(titan.position[0],titan.position[1]+1.2,titan.position[2]),dt,occluders);
+        }else{
+          crash.position.set(p.x,p.y-.95,p.z); if (direction.lengthSq()&&!combat.busy) crash.rotation.y = Math.atan2(direction.x,direction.z);
+          if(combat.animation)animate(combat.animation,true);
+          else if(controller.computedGrounded()&&velocity<=0)animate(direction.lengthSq()>.01?'run':'idle');
+          else {const falling=fallingAnimation(jumpPhase,jumpAge,velocity);if(falling)animate(falling);}
+          playerAnimation.update(dt);
+          enemies.render(combat.enemies,dt);updateHud();
+          if(combat?.presentation){
+            skipAmb.hidden=false;skipAmb.textContent=tutorials.inputMode==='gamepad'?'Pular conversa [✕ / ▢]':'Pular conversa [Enter / J / Espaço]';
+            camera.fov=50;camera.updateProjectionMatrix();camera.position.set(44.54,12.8,4.2);camera.lookAt(44.54,11.8,-3.93);
+          } else {
+            skipAmb.hidden=true;camera.fov = 65; camera.updateProjectionMatrix();follow.update(crash.position,dt,occluders);
+          }
         }
       }
       sky.scene.position.copy(camera.position); props?.render(breakables,phase==='play',camera);pickupActors?.render(pickups,phase==='play',camera,gameplayTime);visuals?.update(dt,camera);renderer.render(scene,camera);

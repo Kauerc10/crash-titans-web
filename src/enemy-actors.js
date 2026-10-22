@@ -76,12 +76,13 @@ export class EnemyActors {
     let clip='PTRN_spike_idle';
     if(e.animation==='idle')clip='PTRN_spike_idle';
     else if(e.animation==='run')clip='PTRN_strong_run';
+    else if(e.animation==='jack')clip='PTRN_spike_jack';
     else if(e.animation==='attack_light')clip='PTRN_spike_attack_light_A';
     else if(e.animation==='attack_heavy')clip='PTRN_spike_attack_heavy';
     else if(e.animation==='impact_light')clip='PTRN_strong_impact_light';
     else if(e.animation==='stumble')clip='PTRN_strong_impact_stumble';
     else if(e.animation==='stun')clip='PTRN_strong_stun';
-    v.animation.play(clip,['attack','hit','stumble'].includes(e.state));
+    v.animation.play(clip,['attack','hit','stumble','jack'].includes(e.state));
     v.animation.update(dt);
     continue;
    }

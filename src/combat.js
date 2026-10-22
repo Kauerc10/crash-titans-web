@@ -47,12 +47,14 @@ export class Combat {
   this.attack=null;this.queued=false;this.combo=-1;this.sinceAttack=10;this.needsRecovery=false;
   this.player={health:combatTuning.playerHealth,invulnerable:0,hitTime:0,deathTime:0};
   this.events=[];this.generation++;
+  this.jackedTitan=this.savedEncounter?.jackedTitanId?this.enemies.find(e=>e.id===this.savedEncounter.jackedTitanId)||null:null;
  }
  markCheckpoint(){
   this.savedCleared=new Set(this.cleared);
-  this.savedEncounter=structuredClone({enemies:this.enemies,encounter:this.encounter,presentation:this.presentation});
+  this.savedEncounter=structuredClone({enemies:this.enemies,encounter:this.encounter,presentation:this.presentation,jackedTitanId:this.jackedTitan?.id||null});
  }
- requestAttack(){if(!this.presentation&&this.player.health>0&&this.player.hitTime<=0)this.queued=true;}
+ get isJacked(){return !!this.jackedTitan;}
+ requestAttack(){if(!this.presentation&&!this.jackedTitan&&this.player.health>0&&this.player.hitTime<=0)this.queued=true;return !this.jackedTitan;}
  skipPresentation(){
   if(this.presentation){
    const id=this.presentation.id;
@@ -63,19 +65,65 @@ export class Combat {
   }
  }
  canJack(playerPos){
-  const titan=this.enemies.find(e=>e.isTitan&&e.isStunned&&e.jackable);
+  if(this.jackedTitan)return false;
+  const titan=this.enemies.find(e=>e.isTitan&&e.isStunned&&e.jackable&&!e.isJacked);
   if(!titan)return false;
   const pos=playerPos?.position||playerPos||[0,0,0];
   return distance(titan.position,pos)<=4.5;
  }
  requestJack(playerPos){
+  if(!playerPos&&this.jackedTitan){
+   return this.requestDismount();
+  }
   if(!this.canJack(playerPos)){
    this.events.push({type:'jackRejected'});
    return false;
   }
-  const titan=this.enemies.find(e=>e.isTitan&&e.isStunned&&e.jackable);
+  const titan=this.enemies.find(e=>e.isTitan&&e.isStunned&&e.jackable&&!e.isJacked);
+  titan.isJacked=true;
+  titan.jackable=false;
+  titan.isStunned=false;
+  titan.state='jacked';
+  titan.animation='idle';
+  titan.age=0;
+  titan.motion=[0,0];
+  this.jackedTitan=titan;
   this.events.push({type:'jackAccepted',id:titan.id,titan});
+  this.events.push({type:'jackMounted',id:titan.id,titan});
   return true;
+ }
+ requestDismount(){
+  if(!this.jackedTitan)return false;
+  const titan=this.jackedTitan;
+  titan.isJacked=false;
+  titan.state='idle';
+  titan.animation='idle';
+  titan.motion=[0,0];
+  const yaw=titan.yaw||0;
+  const dist=combatRules.spike?.dismountDistance||1.5;
+  const dismountPos=[
+   titan.position[0]-Math.sin(yaw)*dist,
+   titan.position[1],
+   titan.position[2]-Math.cos(yaw)*dist
+  ];
+  this.jackedTitan=null;
+  this.events.push({type:'titanDismounted',id:titan.id,titan,position:dismountPos});
+  return true;
+ }
+ requestTitanMove(direction){
+  if(!this.jackedTitan)return;
+  if(direction&&(direction[0]!==0||direction[1]!==0)){
+   const len=Math.hypot(direction[0],direction[1]);
+   const dx=direction[0]/len;
+   const dz=direction[1]/len;
+   const speed=combatRules.spike?.jackedSpeed||11.3;
+   this.jackedTitan.motion=[dx*speed,dz*speed];
+   this.jackedTitan.yaw=Math.atan2(dx,dz);
+   this.jackedTitan.animation='run';
+  }else{
+   this.jackedTitan.motion=[0,0];
+   this.jackedTitan.animation='idle';
+  }
  }
  damagePlayer(amount){
   if(this.player.health<=0||this.player.invulnerable>0)return false;
@@ -91,8 +139,12 @@ export class Combat {
  get busy(){return !!this.presentation||this.player.health<=0||this.player.hitTime>0||!!this.attack;}
  get propAttack(){const strike=this.attack?.activeStrike;if(!strike)return null;strike.age=this.attack.age;return strike;}
  get animation(){return this.player.health<=0?'death':this.player.hitTime>0?'impact_light':this.attack?.clip||null;}
- step(dt,player){
-  const events=this.events.splice(0);this.sinceAttack+=dt;this.player.invulnerable=Math.max(0,this.player.invulnerable-dt);this.player.hitTime=Math.max(0,this.player.hitTime-dt);
+ step(dt,player,titanInput){
+  const events=this.events.splice(0);
+  if(this.jackedTitan){
+   if(titanInput)this.requestTitanMove(titanInput.direction);
+   this.jackedTitan.age+=dt;
+  }this.sinceAttack+=dt;this.player.invulnerable=Math.max(0,this.player.invulnerable-dt);this.player.hitTime=Math.max(0,this.player.hitTime-dt);
   if(this.player.health<=0){this.player.deathTime+=dt;this.needsRecovery=this.player.deathTime>=(this.durations.death||2);for(const e of this.enemies)e.motion=[0,0];return events;}
   if(!this.encounter){
    const source=this.data.encounters?.find(e=>(e.id==='L1_E1_Combat2'||e.id==='L1_E1_Combat7')&&!this.cleared.has(e.id)&&containsVolume(this.data.volumes[e.trigger],player.position));
@@ -106,6 +158,7 @@ export class Combat {
       sourceName:s.name,
       template:s.template||(isSpike?'Characters:Spike':'Characters:Chiratta'),
       isTitan:isSpike,
+      isJacked:false,
       position:[...loc.position],
       yaw:loc.yaw||0,
       health:isSpike?combatTuning.spikeHealth:combatTuning.enemyHealth,
@@ -163,6 +216,9 @@ export class Combat {
    if(a.age>=a.duration){this.attack=null;this.sinceAttack=0;}
   }
   for(const e of this.enemies){
+   if(e.isTitan&&e.isJacked){
+    continue;
+   }
    e.age+=dt;e.motion=[0,0];
    if(e.isTitan){
     if(e.isStunned){
