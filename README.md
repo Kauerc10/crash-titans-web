@@ -12,7 +12,7 @@ Este repositório público contém código, conversores, testes e documentação
 - Objetos quebráveis, Mojo e snapshot de coleta/objetos no checkpoint.
 - HUD de vida, Mojo e combo; áudio de combate e interações.
 
-Parte das regras físicas, IA, câmera, efeitos e transições ainda é aproximada. Apresentação Amb1, validação do percurso contínuo, recompensas específicas dos inimigos e mecânicas do primeiro titã permanecem pendentes.
+Amb1, recompensas de Chirattas, cura, áudio e tutoriais têm implementação parcial. Parte das regras físicas, IA, câmera, emissores de partículas e transições continua aproximada. O percurso contínuo até Spike, encontros intermediários, resgate de Aku Aku e mecânicas do primeiro titã permanecem pendentes. Entrar na arena não equivale a executar sua cena.
 
 ## Preparação local
 
@@ -23,7 +23,7 @@ npm ci
 npm run test:core
 ```
 
-Os testes acima não exigem recursos originais. `npm test` inclui também testes de integração de dados extraídos e requer a preparação local desses recursos.
+Os testes core usam fixtures sintéticas escritas à mão e não exigem recursos originais, conversão ou acesso à ISO. Após preparar os dados extraídos, `npm run test:source` valida referências de gameplay e interações. `npm test` executa core e source, exigindo essa preparação local. Testes de regras que fornecem posições diretamente não comprovam um percurso no navegador.
 
 Com os recursos já convertidos em `public/assets/`:
 
@@ -54,6 +54,9 @@ Esse comando prepara apenas os menus. Outros conversores preparam personagens, m
 
 O trabalho é acompanhado nas [Issues](https://github.com/Kauerc10/crash-titans-web/issues). O próximo pacote cobre o primeiro encontro completo e o percurso até a primeira passagem obrigatória com Spike; a [especificação aprovada e os 12 tickets com dependências](docs/planning/README.md) estão publicados nas Issues.
 
+- [Correções de confiabilidade e aceite #15](https://github.com/Kauerc10/crash-titans-web/issues/15)
+- [Regras e aceite de checkpoints](docs/encounter-checkpoint.md)
+- [Tutoriais e percurso até Spike ainda pendente](docs/spike-tutorial-progression.md)
 - [Roadmap do episódio 1](docs/episode-one-roadmap.md)
 - [HUD e dados de combate](docs/hud-combat-milestone.md)
 
