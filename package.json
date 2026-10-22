@@ -7,7 +7,7 @@
     "start": "node serve.mjs",
     "dev": "node serve.mjs",
     "test": "npm run test:core && npm run test:source",
-    "test:core": "node --test tests/state.test.mjs tests/range.test.mjs tests/follow-camera.test.mjs tests/player-animation.test.mjs tests/breakables.test.mjs tests/combat.test.mjs tests/encounter-presentation.test.mjs tests/rewards.test.mjs tests/effects.test.mjs tests/encounter-checkpoint.test.mjs tests/tutorial-progression.test.mjs",
+    "test:core": "node --test tests/state.test.mjs tests/range.test.mjs tests/follow-camera.test.mjs tests/player-animation.test.mjs tests/breakables.test.mjs tests/combat.test.mjs tests/encounter-presentation.test.mjs tests/rewards.test.mjs tests/effects.test.mjs tests/encounter-checkpoint.test.mjs tests/tutorial-progression.test.mjs tests/corrective-state.test.mjs",
     "test:source": "node --test tests/episode.test.mjs tests/interactions.test.mjs tests/*.source.mjs"
   },
   "dependencies": {
