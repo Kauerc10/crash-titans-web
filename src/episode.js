@@ -10,9 +10,9 @@ export function containsVolume(volume, position) {
 }
 
 export class EpisodeProgress {
-  constructor(data) { this.data=data;this.completed=new Set();this.checkpoint=null; }
+  constructor(data) { this.data=data;this.completed=new Set();this.checkpoint=null;this.savedCompleted=new Set(); }
   complete(id) { this.completed.add(id); }
-  setEntry(position,yaw=0) { this.checkpoint={id:'entry',position:[...position],yaw}; }
+  setEntry(position,yaw=0) { this.checkpoint={id:'entry',position:[...position],yaw};this.markCheckpoint(); }
   visit(position) {
     const reached=this.data.checkpoints.filter(c=>!this.completed.has(c.id)&&c.requires.every(id=>this.completed.has(id))&&containsVolume(this.data.volumes[c.trigger],position));
     for(const checkpoint of reached) this.completed.add(checkpoint.id);
@@ -24,8 +24,11 @@ export class EpisodeProgress {
       const selected=reached[0],locator=this.data.locators[selected.locator];
       this.checkpoint={id:selected.id,position:[...locator.position],yaw:locator.yaw};
     }
+    if(reached.length)this.markCheckpoint();
     return reached;
   }
+  markCheckpoint() { this.savedCompleted=new Set(this.completed); }
+  resetToCheckpoint() { this.completed=new Set(this.savedCompleted); }
   recovery() { return this.checkpoint ? {...this.checkpoint,position:[...this.checkpoint.position]} : null; }
 }
 
