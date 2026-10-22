@@ -57,8 +57,9 @@ def convert(iso,out,source_paths=None,actor_names=None,animation_names=None,pres
  for source in source_paths or ['cinematics\\c1b26988.p3d','cinematics\\c6b664d5.p3d']:
   tree=chunks(arc.read(source));resource.resources(tree);sources.append((source,tree))
  records=[];errors=[]
+ all_anims={string(x.data,4)[0]:x for _,tree in sources for x in walk(tree) if x.id==0x121000}
  for source,tree in sources:
-  allchunks=list(walk(tree));skels={string(x.data)[0]:x for x in allchunks if x.id==0x23000};shapes={string(x.data)[0]:x for x in allchunks if x.id in [0x10000,0x10001]};anims={string(x.data,4)[0]:x for x in allchunks if x.id==0x121000}
+  allchunks=list(walk(tree));skels={string(x.data)[0]:x for x in allchunks if x.id==0x23000};shapes={string(x.data)[0]:x for x in allchunks if x.id in [0x10000,0x10001]};anims={**all_anims, **{string(x.data,4)[0]:x for x in allchunks if x.id==0x121000}}
   for actor in [x for x in allchunks if x.id==0x123000]:
    name,p=string(actor.data,4)
    if actor_names and name not in actor_names:continue

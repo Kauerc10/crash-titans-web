@@ -51,7 +51,7 @@ export async function startGame(viewport, onExit, settings) {
   const keys = new Set(), resources = new Set();
   const jumpInput = new JumpInput(); let progress,follow,noticeUntil=0,gameplayTime=0,jumpCount=0,recoveryCount=0,spaceHeld=false;
   let breakables,props,pickups,pickupActors;
-  let combat,enemies,visuals,padAttackDown=false;
+  let combat,enemies,visuals,padAttackDown=false,padJackDown=false;
   let tutorials;
   function updateHud(){if(combat)gameplayHud.update(combat,pickups,gameplayTime,tutorials);}
   const padJumpHeld=()=>[...(navigator.getGamepads?.()||[])].some(p=>p?.mapping==='standard'&&p.buttons[0]?.pressed);
@@ -123,6 +123,8 @@ export async function startGame(viewport, onExit, settings) {
   function enterPlay() {
     if (!crash || !body || phase === 'play') return;
     phase = 'play'; dialogue?.pause(); actors.forEach(a => a.visible = false); crash.visible = true; skip.hidden = true;
+    const isSpikeTest = new URLSearchParams(location.search).has('spike-test') || new URLSearchParams(location.search).get('combat-test') === 'spike';
+    if (isSpikeTest) { body.setTranslation({x: -198.3, y: 78.5 + .95, z: -227.9}, true); selectRegion('r5'); progress.complete('L1_E1_Combat2'); progress.complete('SpikeCinematic'); }
     if (cinematicCrash) {
       const index = actors.indexOf(cinematicCrash); mixers[index].setTime(103.3333); cinematicCrash.updateMatrixWorld(true);
       let motion; cinematicCrash.traverse(o => { if (o.isBone && /Motion_Root/i.test(o.name)) motion = o; });
@@ -191,7 +193,8 @@ export async function startGame(viewport, onExit, settings) {
     const player = add(await loader.loadAsync('/assets/characters/crash/crash.glb')); if (stopped) return;
     crash = player.scene; crash.visible = false; playerAnimation=new PlayerAnimation(crash,player.animations);
     const enemySource=add(await loader.loadAsync('/assets/characters/chiratta/chiratta.glb'));if(stopped)return;enemySource.scene.visible=false;
-    enemies=new EnemyActors(scene,world,enemySource);combat=new Combat(gameplay,{...Object.fromEntries(player.animations.map(c=>[c.name,c.duration])),enemyAttack:enemySource.animations.find(c=>c.name==='PTRN_chiratta_attack_light')?.duration});
+    let spikeSource=null;try{spikeSource=add(await loader.loadAsync('/assets/characters/spike/spike.glb'));if(spikeSource)spikeSource.scene.visible=false;}catch(e){console.warn('Spike load skipped:',e);}
+    enemies=new EnemyActors(scene,world,{chiratta:enemySource,spike:spikeSource});combat=new Combat(gameplay,{...Object.fromEntries(player.animations.map(c=>[c.name,c.duration])),enemyAttack:enemySource.animations.find(c=>c.name==='PTRN_chiratta_attack_light')?.duration,spikeAttack:spikeSource?.animations.find(c=>c.name==='PTRN_spike_attack_light_A')?.duration});
     const propData=await json('/assets/props/episode-one.json'),propSources=new Map(),pickupSources=new Map();
     const propUrls=[...new Set(Object.values(propData.definitions).flatMap(d=>d.states.map(s=>s.model).filter(Boolean)))];
     await Promise.all(propUrls.map(async url=>{const source=add(await loader.loadAsync(url));if(!source)return;source.scene.visible=false;propSources.set(url,source);}));
@@ -257,6 +260,9 @@ export async function startGame(viewport, onExit, settings) {
         if(padAttack&&!padAttackDown){if(combat?.presentation){combat.skipPresentation();ambientAudio?.pause();}else combat.requestAttack();}
         if(pad?.buttons[9]?.pressed&&combat?.presentation){combat.skipPresentation();ambientAudio?.pause();}
         padAttackDown=padAttack;
+        const padJack=!!pad?.buttons[1]?.pressed;
+        if((keys.has('KeyL')||padJack)&&!padJackDown&&body){const pp=body.translation();combat.requestJack([pp.x,pp.y-.95,pp.z]);}
+        padJackDown=padJack;
         const deadzone=value=>Math.abs(value||0)>.2?value:0;
         const x = Number(keys.has('KeyD')||keys.has('ArrowRight'))-Number(keys.has('KeyA')||keys.has('ArrowLeft'))+deadzone(pad?.axes[0]);
         const z = Number(keys.has('KeyS')||keys.has('ArrowDown'))-Number(keys.has('KeyW')||keys.has('ArrowUp'))+deadzone(pad?.axes[1]);
@@ -279,6 +285,9 @@ export async function startGame(viewport, onExit, settings) {
             if(event.type==='spawn')notice('Derrote os Chirattas • J: ataque leve',5);
             if(event.type==='cleared'){progress.complete(event.id);if(event.id==='L1_E1_Combat2'){const jumpHint=tutorials.inputMode==='gamepad'?'[✕]':'[Espaço]';notice(`Encontro vencido! Suba as pedras à direita ${jumpHint}`,6);}else notice('Encontro vencido',4);}
             if(event.type==='propBlocked')notice('Este objeto exige mais força',2);
+            if(event.type==='titanStunned'){const jackHint=tutorials.inputMode==='gamepad'?'◯ (B)':'L';notice('Spike atordoado! Pressione ' + jackHint + ' para montar',10);}
+            if(event.type==='jackRejected')notice('O titã ainda não está vulnerável à montagem!',2);
+            if(event.type==='jackAccepted')notice('Montagem aceita! (Mecânica nos próximos tickets)',3);
           }
           const jump=combat.busy?(jumpInput.cancelPending(),null):jumpInput.consume(grounded);
           if(jump){velocity=9;jumpPhase=jump;jumpAge=0;jumpCount++;animate(jump==='air'?'jump_air':'jump_single',true);}

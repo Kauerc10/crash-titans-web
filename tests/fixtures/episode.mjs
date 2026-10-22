@@ -14,7 +14,8 @@ export function episodeFixture() {
     after: {position:[21,0,0],yaw:1},
     trail: {position:[25,0,0],yaw:1},
     approach: {position:[35,0,0],yaw:1},
-    enemy: {position:[10,0,1],yaw:0}
+    enemy: {position:[10,0,1],yaw:0},
+    spikeLocator: {position:[40,0,1.5],yaw:0}
   },
   checkpoints: [
     {id:'before',trigger:'entry',locator:'entry',requires:['NIS01']},
@@ -22,7 +23,10 @@ export function episodeFixture() {
     {id:'trail',trigger:'trail',locator:'trail',requires:['L1_E1_Combat2']},
     {id:'approach',trigger:'approach',locator:'approach',requires:['L1_E1_Combat2']}
   ],
-  encounters: [{id:'L1_E1_Combat2',trigger:'arena',requires:[],spawns:[{name:'test-enemy',locator:'enemy'}]}],
+  encounters: [
+    {id:'L1_E1_Combat2',trigger:'arena',requires:[],spawns:[{name:'test-enemy',locator:'enemy'}]},
+    {id:'L1_E1_Combat7',trigger:'PlaySpike',requires:['L1_E1_Combat2'],spawns:[{name:'Spike1',template:'Characters:Spike',locator:'spikeLocator'}]}
+  ],
   tutorials: [
     {id:'Tutorial_Tutorial_AirJump',triggerType:'interaction',position:[30,0,0],requires:['L1_E1_Combat2'],duration:5,texts:{keyboard:'SPACE twice',gamepad:'A twice',ps2:'jump twice'},audio:'example'},
     {id:'Tutorial_Hint_BlockBreaker',triggerType:'volume',trigger:'PlaySpike',requires:[],texts:{keyboard:'unsupported heavy',gamepad:'unsupported heavy'}},
