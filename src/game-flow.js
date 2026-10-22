@@ -13,6 +13,8 @@ import { PickupActors } from './pickup-actors.js';
 import { Combat, combatTuning } from './combat.js';
 import { GameplayHud } from './gameplay-hud.js';
 import { EnemyActors } from './enemy-actors.js';
+import { GameplayEffects } from './gameplay-effects.js';
+import { TutorialManager } from './tutorials.js';
 
 const base = '/assets/levels/l1-e1/';
 const json = async url => { const r = await fetch(url); if (!r.ok) throw Error(`${url}: ${r.status}`); return r.json(); };
@@ -26,66 +28,95 @@ export function sampleTrack(track, frame, fallback) {
 }
 const vector = a => new THREE.Vector3(a[0], a[1], -a[2]);
 
+export const regionNeighbors = {
+  r7: ['r7', 'r1'],
+  r1: ['r7', 'r1', 'r2'],
+  r2: ['r1', 'r2', 'r3'],
+  r3: ['r2', 'r3', 'r4'],
+  r4: ['r3', 'r4', 'r5'],
+  r5: ['r4', 'r5', 'r6'],
+  r6: ['r5', 'r6'],
+  mojo: ['mojo'],
+};
+
 export async function startGame(viewport, onExit, settings) {
   const root = document.createElement('div'); root.className = 'native-game'; viewport.append(root);
   const status = document.createElement('div'); status.className = 'native-status'; root.append(status);
   const bar = document.createElement('div'); bar.className = 'native-controls'; root.append(bar);
   const gameplayHud=new GameplayHud(root),hud=gameplayHud.root;
   const action = (text, fn) => { const b = document.createElement('button'); b.textContent = text; b.onclick = fn; bar.append(b); return b; };
-  let stopped = false, frameId, world, renderer, dialogue, phase = 'loading', paused = false;
+  let stopped = false, frameId, world, renderer, dialogue, ambientAudio, phase = 'loading', paused = false;
   const effects=new GameplayAudio(settings);
-  const settingsChanged=()=>effects.apply();window.addEventListener('game-audio-settings',settingsChanged);
+  const settingsChanged=()=>{effects.apply();if(ambientAudio)ambientAudio.volume=settings.muted?0:settings.effects;};window.addEventListener('game-audio-settings',settingsChanged);
   const keys = new Set(), resources = new Set();
   const jumpInput = new JumpInput(); let progress,follow,noticeUntil=0,gameplayTime=0,jumpCount=0,recoveryCount=0,spaceHeld=false;
   let breakables,props,pickups,pickupActors;
-  let combat,enemies,padAttackDown=false;
-  function updateHud(){if(combat)gameplayHud.update(combat,pickups,gameplayTime);}
+  let combat,enemies,visuals,padAttackDown=false,padHeavyDown=false,padJackDown=false;
+  let tutorials;
+  function updateHud(){if(combat)gameplayHud.update(combat,pickups,gameplayTime,tutorials);}
   const padJumpHeld=()=>[...(navigator.getGamepads?.()||[])].some(p=>p?.mapping==='standard'&&p.buttons[0]?.pressed);
   const occluders=[];
   const regionObjects=new Map();
-  const collisionRegions = new Map(); let activeRegion = 'r1';
+  const collisionRegions = new Map(); let activeRegion = 'r7';
   function selectRegion(name) {
     activeRegion = name;
-    for(const [region,object] of regionObjects)object.visible=region===name;
+    const visibleSet = new Set(regionNeighbors[name] || [name]);
+    for(const [region,object] of regionObjects)object.visible = visibleSet.has(region);
     occluders.length=0;
-    regionObjects.get(name)?.traverse(o=>{
-      if(!o.isMesh||!o.visible||o.material.transparent||o.material.alphaTest>0)return;
-      let ancestor=o;while(ancestor){if(!ancestor.visible||ancestor.userData.collisionMaterial)return;ancestor=ancestor.parent;}
-      occluders.push(o);
-    });
+    for(const object of regionObjects.values()){
+      object.traverse(o=>{
+        if(!o.isMesh||!o.visible||o.material.transparent||o.material.alphaTest>0)return;
+        let ancestor=o;while(ancestor){if(!ancestor.visible||ancestor.userData.collisionMaterial)return;ancestor=ancestor.parent;}
+        occluders.push(o);
+      });
+    }
   }
   function stop() {
-    if (stopped) return; stopped = true; cancelAnimationFrame(frameId); dialogue?.pause(); observer.disconnect();
+    if (stopped) return; stopped = true; cancelAnimationFrame(frameId); dialogue?.pause(); ambientAudio?.pause(); observer.disconnect();
     document.removeEventListener('keydown', keyDown); document.removeEventListener('keyup', keyUp); window.removeEventListener('blur', blur);
     resources.forEach(o => { o.geometry?.dispose(); for (const m of [].concat(o.material || [])) { for (const v of Object.values(m)) if (v?.isTexture) v.dispose(); m.dispose(); } });
-    pickupActors?.clear();props?.clear();effects.stop();window.removeEventListener('game-audio-settings',settingsChanged);enemies?.clear();renderer?.dispose(); world?.free(); root.remove(); onExit();
+    pickupActors?.clear();props?.clear();visuals?.dispose();effects.stop();window.removeEventListener('game-audio-settings',settingsChanged);enemies?.clear();renderer?.dispose(); world?.free(); root.remove(); onExit();
   }
   action('Voltar ao menu', stop);
-  const pauseButton = action('Pausar', () => { paused = !paused; effects.pause(paused);keys.clear();
+  const pauseButton = action('Pausar', () => { paused = !paused; if(paused)visuals?.clear(); effects.pause(paused);tutorials?.pause(paused);keys.clear();
     jumpInput.suspend();
     const heldPad=padJumpHeld();
     padAttackDown=[...(navigator.getGamepads?.()||[])].some(p=>p?.buttons[2]?.pressed);
+    padHeavyDown=[...(navigator.getGamepads?.()||[])].some(p=>p?.buttons[3]?.pressed);
     if(!spaceHeld&&!heldPad)jumpInput.release();
-    pauseButton.textContent = paused ? 'Continuar' : 'Pausar'; restart.hidden=phase!=='play'||!paused; if (phase === 'cinematic') paused ? dialogue.pause() : dialogue.play().catch(showError); });
+    pauseButton.textContent = paused ? 'Continuar' : 'Pausar'; restart.hidden=phase!=='play'||!paused; if (phase === 'cinematic') paused ? dialogue.pause() : dialogue.play().catch(showError); if(combat?.presentation)paused?ambientAudio.pause():ambientAudio.play().catch(showError); });
   const skip = action('Pular cena', () => enterPlay()); skip.hidden = true;
+  const skipAmb = document.createElement('button'); skipAmb.className = 'skip-conversation-pill'; skipAmb.textContent = 'Pular conversa [Enter / J / Espaço]'; skipAmb.hidden = true;
+  skipAmb.onclick = () => { if(combat?.presentation){combat.skipPresentation();ambientAudio?.pause();} }; root.append(skipAmb);
   const restart=action('Retomar checkpoint',()=>{recover();if(paused)pauseButton.click();});restart.hidden=true;
   function notice(text,seconds=5){status.hidden=false;status.textContent=text;noticeUntil=gameplayTime+seconds;}
   function recover(){
     const checkpoint=progress?.recovery();if(!checkpoint||!body)return;
+    progress.resetToCheckpoint();
     body.setTranslation({x:checkpoint.position[0],y:checkpoint.position[1]+.95,z:checkpoint.position[2]},true);
     crash.rotation.y=checkpoint.yaw;velocity=0;accumulator=0;keys.clear();spaceHeld=false;jumpInput.reset();follow.reset();
     recoveryCount++;
-    effects.clear();pickups?.resetToCheckpoint();gameplayHud.reset(pickups?.total||0);breakables?.resetToCheckpoint();props?.sync(breakables);combat?.resetToCheckpoint();enemies?.clear();updateHud();
+    ambientAudio?.pause();if(ambientAudio)ambientAudio.currentTime=0;visuals?.clear();effects.clear();pickups?.resetToCheckpoint();gameplayHud.reset(pickups?.total||0);breakables?.resetToCheckpoint();props?.sync(breakables);combat?.resetToCheckpoint();tutorials?.resetToCheckpoint();enemies?.clear();updateHud();
     notice('Retomando do último checkpoint',3);
   }
   function showError(e) { status.hidden = false; status.textContent = `Falha ao carregar: ${e.message}. Volte ao menu para tentar novamente.`; }
-  function keyDown(e) { if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault(); keys.add(e.code); if(e.code==='Space'&&!e.repeat){spaceHeld=true;if(phase==='play'&&!paused)jumpInput.press();} if(e.code==='KeyJ'&&!e.repeat&&phase==='play'&&!paused)combat?.requestAttack(); if (e.code === 'Escape' && !e.repeat) pauseButton.click(); }
+  function keyDown(e) {
+    tutorials?.setInputMode('keyboard');
+    if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
+    keys.add(e.code);
+    if(e.code==='Space'&&!e.repeat){spaceHeld=true;if(phase==='play'&&!paused){if(combat?.presentation){combat.skipPresentation();ambientAudio?.pause();}else jumpInput.press();}}
+    if(e.code==='KeyJ'&&!e.repeat&&phase==='play'&&!paused){if(combat?.presentation){combat.skipPresentation();ambientAudio?.pause();}else combat?.requestAttack();}
+    if(e.code==='KeyK'&&!e.repeat&&phase==='play'&&!paused){if(combat?.presentation){combat.skipPresentation();ambientAudio?.pause();}else combat?.requestHeavyAttack();}
+    if(e.code==='Enter'&&!e.repeat&&phase==='play'&&!paused&&combat?.presentation){combat.skipPresentation();ambientAudio?.pause();}
+    if (e.code === 'Escape' && !e.repeat) pauseButton.click();
+  }
   function keyUp(e) { keys.delete(e.code);if(e.code==='Space'){spaceHeld=false;if(!padJumpHeld())jumpInput.release();} }
   function blur() { keys.clear();spaceHeld=false; if (!paused && phase !== 'loading') pauseButton.click(); }
   document.addEventListener('keydown', keyDown); document.addEventListener('keyup', keyUp); window.addEventListener('blur', blur);
   const scene = new THREE.Scene(); scene.background = new THREE.Color(0x89b8ca);
   scene.add(new THREE.HemisphereLight(0xffffff,0x7c725f,2));
   const sun = new THREE.DirectionalLight(0xffffff,2); sun.position.set(-20,50,30); scene.add(sun);
+  visuals=new GameplayEffects(scene);
   const camera = new THREE.PerspectiveCamera(65, 4 / 3, .1, 1800);
   const observer = new ResizeObserver(() => { if (!renderer) return; const w = root.clientWidth, h = root.clientHeight; renderer.setSize(w,h);gameplayHud.resize(w,h); camera.aspect = w/h; camera.updateProjectionMatrix(); }); observer.observe(root);
   let crash, playerAnimation, activeClip, body, collider, controller, velocity = 0, accumulator = 0,jumpPhase='ground',jumpAge=0;
@@ -94,27 +125,28 @@ export async function startGame(viewport, onExit, settings) {
   function enterPlay() {
     if (!crash || !body || phase === 'play') return;
     phase = 'play'; dialogue?.pause(); actors.forEach(a => a.visible = false); crash.visible = true; skip.hidden = true;
-    // Original PlayerSpawnPosition; cinematic handoff objectives remain under investigation.
+    const isSpikeTest = new URLSearchParams(location.search).has('spike-test') || new URLSearchParams(location.search).get('combat-test') === 'spike';
+    if (isSpikeTest) { body.setTranslation({x: -198.3, y: 78.5 + .95, z: -227.9}, true); selectRegion('r5'); progress.complete('L1_E1_Combat2'); progress.complete('SpikeCinematic'); }
     if (cinematicCrash) {
       const index = actors.indexOf(cinematicCrash); mixers[index].setTime(103.3333); cinematicCrash.updateMatrixWorld(true);
       let motion; cinematicCrash.traverse(o => { if (o.isBone && /Motion_Root/i.test(o.name)) motion = o; });
       if (motion) { const p = motion.getWorldPosition(new THREE.Vector3()); body.setTranslation({x:p.x,y:p.y+1,z:p.z},true); }
     }
     velocity = 0;accumulator=0;jumpInput.reset();follow.reset();
-    const entry=body.translation();progress.setEntry([entry.x,entry.y-.95,entry.z],crash.rotation.y);progress.complete('NIS01');
+    const entry=body.translation();progress.complete('NIS01');progress.setEntry([entry.x,entry.y-.95,entry.z],crash.rotation.y);
     hud.hidden=false;updateHud();
-    notice('WASD / setas: mover • Espaço: salto / salto duplo • J: ataque leve • Esc: pausa',8);
+    notice('WASD / setas: mover • Espaço: salto / salto duplo • J: ataque leve • K: ataque pesado • Esc: pausa',8);
     animate('idle');
   }
   try {
+    await visuals.loadTextures();
+    if(stopped)return;
     renderer = new THREE.WebGLRenderer({antialias:true}); renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)); renderer.outputColorSpace = THREE.SRGBColorSpace; root.prepend(renderer.domElement);
     observer.disconnect(); observer.observe(root);
     const manager = new THREE.LoadingManager(); manager.onProgress = (_, n, total) => { status.textContent = `CARREGANDO… ${n} / ${total} recursos`; };
     const loader = new GLTFLoader(manager);
     const add = gltf => { if (stopped) return; scene.add(gltf.scene); gltf.scene.traverse(o => {
       resources.add(o); if (o.userData.collisionMaterial) o.visible = false;
-      // NIS moves bones in world space while the mesh node stays at its anchor.
-      // Bind-pose bounds therefore cannot cull an animated actor correctly.
       if (o.isSkinnedMesh) o.frustumCulled = false;
       for (const material of [].concat(o.material || [])) {
         if (material.userData.properties?.ATST === 1) { material.alphaTest = .01; material.transparent = false; material.depthWrite = true; material.needsUpdate = true; }
@@ -122,7 +154,12 @@ export async function startGame(viewport, onExit, settings) {
       }
     }); return gltf; };
     const runtime = await json('/assets/cinematics/nis01/runtime.json');
-    const gameplay=await json(base+'gameplay.json');progress = new EpisodeProgress(gameplay);follow=new FollowCamera(camera);
+    const gameplay=await json(base+'gameplay.json');
+    const ambient=await json('/assets/cinematics/amb1/runtime.json');
+    if(!new URLSearchParams(location.search).has('combat-test')&&!new URLSearchParams(location.search).has('interactions-test'))gameplay.encounters.find(e=>e.id==='L1_E1_Combat2').presentation=ambient;
+    ambientAudio=new Audio(ambient.audio);ambientAudio.volume=settings.muted?0:settings.effects;ambientAudio.preload='auto';root.append(ambientAudio);
+    progress = new EpisodeProgress(gameplay);follow=new FollowCamera(camera);
+    tutorials = new TutorialManager(gameplay);
     const collision = await json(base + 'source-collision.json');
     const collisionBytes = await (await fetch(base + 'source-collision.bin')).arrayBuffer();
     await RAPIER.init(); if (stopped) return;
@@ -134,7 +171,7 @@ export async function startGame(viewport, onExit, settings) {
     }
     body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(57.412,45.556,52.091));
     collider = world.createCollider(RAPIER.ColliderDesc.capsule(.55,.4),body);
-    controller = world.createCharacterController(.03); controller.enableAutostep(.35,.2,true); controller.enableSnapToGround(.4);
+    controller = world.createCharacterController(.03); controller.setMaxSlopeClimbAngle(Math.PI*75/180); controller.setMinSlopeSlideAngle(Math.PI*75/180); controller.enableAutostep(.5,.25,true); controller.enableSnapToGround(.8);
     function staticRegion(gltf) {
       gltf.scene.updateMatrixWorld(true); const batches = new Map();
       gltf.scene.traverse(o => {
@@ -152,22 +189,22 @@ export async function startGame(viewport, onExit, settings) {
       return add(gltf);
     }
     await Promise.all([...Array.from({length:7},(_,i)=>`r${i+1}`),'mojo'].map(name=>loader.loadAsync(base+`${name}.gltf`).then(g=>{g.scene.name=name==='mojo'?'regionmojo':`region${name.slice(1)}`;regionObjects.set(name,g.scene);return staticRegion(g);})));
-    selectRegion('r1');
+    selectRegion('r7');
     const sky = add(await loader.loadAsync(base+'skybox.gltf')); sky.scene.name = 'skybox';
     sky.scene.traverse(o => { if(o.isMesh) { o.material.depthWrite = false; o.renderOrder = -100; } });
     const player = add(await loader.loadAsync('/assets/characters/crash/crash.glb')); if (stopped) return;
     crash = player.scene; crash.visible = false; playerAnimation=new PlayerAnimation(crash,player.animations);
     const enemySource=add(await loader.loadAsync('/assets/characters/chiratta/chiratta.glb'));if(stopped)return;enemySource.scene.visible=false;
-    enemies=new EnemyActors(scene,world,enemySource);combat=new Combat(gameplay,{...Object.fromEntries(player.animations.map(c=>[c.name,c.duration])),enemyAttack:enemySource.animations.find(c=>c.name==='PTRN_chiratta_attack_light')?.duration});
+    let spikeSource=null;try{spikeSource=add(await loader.loadAsync('/assets/characters/spike/spike.glb'));if(spikeSource)spikeSource.scene.visible=false;}catch(e){console.warn('Spike load skipped:',e);}
+    enemies=new EnemyActors(scene,world,{chiratta:enemySource,spike:spikeSource});combat=new Combat(gameplay,{...Object.fromEntries(player.animations.map(c=>[c.name,c.duration])),enemyAttack:enemySource.animations.find(c=>c.name==='PTRN_chiratta_attack_light')?.duration,spikeAttack:spikeSource?.animations.find(c=>c.name==='PTRN_spike_attack_light_A')?.duration});
     const propData=await json('/assets/props/episode-one.json'),propSources=new Map(),pickupSources=new Map();
     const propUrls=[...new Set(Object.values(propData.definitions).flatMap(d=>d.states.map(s=>s.model).filter(Boolean)))];
     await Promise.all(propUrls.map(async url=>{const source=add(await loader.loadAsync(url));if(!source)return;source.scene.visible=false;propSources.set(url,source);}));
-    await Promise.all(Object.entries(propData.pickupTypes).map(async ([type,definition])=>{const source=add(await loader.loadAsync(definition.model));if(!source)return;source.scene.visible=false;pickupSources.set(type,source);}));
     if(stopped)return;
     breakables=new Breakables(propData);props=new PropActors(scene,propSources,propData,world,RAPIER);
-    pickups=new Pickups(propData);pickupActors=new PickupActors(scene,pickupSources);
-    // Source shadow actors are projection inputs, not opaque scene geometry.
-    // Keep them out until the original projected-shadow pass is implemented.
+    pickups=new Pickups(propData);
+    await Promise.all(Object.entries(pickups.types).map(async ([type,definition])=>{try{const source=add(await loader.loadAsync(definition.model));if(!source)return;source.scene.visible=false;pickupSources.set(type,source);}catch(e){console.warn('Pickup model load failed:',definition.model,e);}}));
+    pickupActors=new PickupActors(scene,pickupSources);
     await Promise.all(runtime.actors.filter(a => a.url && !a.name.endsWith('_shadow')).map(async actor => {
       const gltf = add(await loader.loadAsync(actor.url)); if (!gltf) return;
       gltf.scene.position.set(-66.5162964,-2.566556,-39.922077); actors.push(gltf.scene);
@@ -181,13 +218,14 @@ export async function startGame(viewport, onExit, settings) {
       get breakables(){return {placements:breakables.placements,broken:[...breakables.broken],states:Object.fromEntries([...breakables.states].map(([id,r])=>[id,{...r,name:breakables.state(id).name}]))};},
       get pickups(){return {total:pickups.total,items:[...pickups.items.values()].map(p=>({...p,position:[...p.position]})),colliders:props.colliderCount};},
       get audio(){return {state:effects.context?.state,buffers:effects.buffers.size,active:effects.sources.size,played:effects.playCount};},
-      get combat(){return {health:combat.player.health,maxHealth:combatTuning.playerHealth,enemies:combat.enemies.map(e=>({...e})),cleared:[...combat.cleared],attack:combat.attack?.clip,animation:combat.animation};},
+      get combat(){return {presentation:combat.presentation?{id:combat.presentation.id,age:combat.presentation.age,duration:combat.presentation.duration}:null,health:combat.player.health,maxHealth:combatTuning.playerHealth,enemies:combat.enemies.map(e=>({...e})),cleared:[...combat.cleared],attack:combat.attack?.clip,animation:combat.animation};},
+      get tutorials(){return {completed:[...tutorials.completed],active:tutorials.active?{...tutorials.active}:null,inputMode:tutorials.inputMode,spikeReached:tutorials.spikeReached};},
     };
     dialogue = new Audio(runtime.audioSource); dialogue.volume = settings.muted ? 0 : settings.effects; dialogue.preload = 'auto'; root.append(dialogue);
     status.textContent = 'Cena original pronta';
     const testParams=new URLSearchParams(location.search),combatTest=testParams.get('combat-test')==='1',interactionsTest=testParams.get('interactions-test')==='1';
     function testPosition(prop){
-      const foot=[...prop.position];foot[2]+=1.65;body.setTranslation({x:foot[0],y:foot[1]+.95,z:foot[2]},true);crash.rotation.y=Math.PI;velocity=0;accumulator=0;follow.reset();progress.setEntry(foot,Math.PI);combat.markCheckpoint();breakables.markCheckpoint();pickups.markCheckpoint();
+      const foot=[...prop.position];foot[2]+=1.65;body.setTranslation({x:foot[0],y:foot[1]+.95,z:foot[2]},true);crash.rotation.y=Math.PI;velocity=0;accumulator=0;follow.reset();progress.setEntry(foot,Math.PI);combat.markCheckpoint();breakables.markCheckpoint();pickups.markCheckpoint();tutorials.markCheckpoint();
     }
     const begin = action(interactionsTest?'Iniciar teste de interações':combatTest?'Iniciar teste de combate':'Iniciar cena', async () => { try {
       await effects.unlock();
@@ -219,7 +257,17 @@ export async function startGame(viewport, onExit, settings) {
         gameplayTime+=dt;if(gameplayTime>noticeUntil)status.hidden=true;
         accumulator = Math.min(accumulator+dt,.1);
         const pad=[...(navigator.getGamepads?.()||[])].find(p=>p&&p.mapping==='standard');
-        const padAttack=!!pad?.buttons[2]?.pressed;if(padAttack&&!padAttackDown)combat.requestAttack();padAttackDown=padAttack;
+        if(pad&&(Math.abs(pad.axes[0]||0)>.2||Math.abs(pad.axes[1]||0)>.2||pad.buttons.some(b=>b?.pressed)))tutorials.setInputMode('gamepad');
+        const padAttack=!!pad?.buttons[2]?.pressed;
+        if(padAttack&&!padAttackDown){if(combat?.presentation){combat.skipPresentation();ambientAudio?.pause();}else combat.requestAttack();}
+        const padHeavy=!!pad?.buttons[3]?.pressed;
+        if(padHeavy&&!padHeavyDown){if(combat?.presentation){combat.skipPresentation();ambientAudio?.pause();}else combat.requestHeavyAttack();}
+        if(pad?.buttons[9]?.pressed&&combat?.presentation){combat.skipPresentation();ambientAudio?.pause();}
+        padAttackDown=padAttack;
+        padHeavyDown=padHeavy;
+        const padJack=!!pad?.buttons[1]?.pressed;
+        if((keys.has('KeyL')||padJack)&&!padJackDown&&body){const pp=body.translation();combat.requestJack([pp.x,pp.y-.95,pp.z]);}
+        padJackDown=padJack;
         const deadzone=value=>Math.abs(value||0)>.2?value:0;
         const x = Number(keys.has('KeyD')||keys.has('ArrowRight'))-Number(keys.has('KeyA')||keys.has('ArrowLeft'))+deadzone(pad?.axes[0]);
         const z = Number(keys.has('KeyS')||keys.has('ArrowDown'))-Number(keys.has('KeyW')||keys.has('ArrowUp'))+deadzone(pad?.axes[1]);
@@ -229,11 +277,23 @@ export async function startGame(viewport, onExit, settings) {
           const grounded=controller.computedGrounded()&&velocity<=0;
           const pp=body.translation();
           breakables.update(1/60);
-          const events=combat.step(1/60,{position:[pp.x,pp.y-.95,pp.z],yaw:crash.rotation.y,grounded});
+          const events=combat.step(1/60,{position:[pp.x,pp.y-.95,pp.z],yaw:crash.rotation.y,grounded,presentationTime:combat.presentation?(ambientAudio.ended?combat.presentation.duration:ambientAudio.currentTime):undefined});
           events.push(...breakables.step(combat.propAttack,{position:[pp.x,pp.y-.95,pp.z],yaw:crash.rotation.y}));
           for(const event of events)pickups.spawn(event);
           events.push(...pickups.step(1/60,[pp.x,pp.y-.95,pp.z]));props.sync(breakables);
-          for(const event of events){gameplayHud.event(event,gameplayTime);effects.event(event);if(event.type==='spawn')notice('Derrote os Chirattas • J: ataque leve',5);if(event.type==='cleared')notice('Encontro vencido',4);if(event.type==='propBlocked')notice('Este objeto exige mais força',2);}
+          events.push(...tutorials.step(1/60,[pp.x,pp.y-.95,pp.z],progress));
+          for(const event of events){
+            if(event.type==='healthCollected')combat.healPlayer(event.value);
+            if(event.type==='presentationStarted'){ambientAudio.currentTime=0;ambientAudio.play().catch(showError);skipAmb.hidden=false;notice('Conversa dos Chirattas • Pressione Enter ou J para pular',combat.presentation.duration);}
+            if(event.type==='presentationEnded'){ambientAudio.pause();skipAmb.hidden=true;follow.reset();notice('Derrote os Chirattas • J: ataque leve',5);}
+            gameplayHud.event(event,gameplayTime);effects.event(event);visuals?.event(event,[pp.x,pp.y-.95,pp.z]);
+            if(event.type==='spawn')notice('Derrote os Chirattas • J: ataque leve',5);
+            if(event.type==='cleared'){progress.complete(event.id);if(event.id==='L1_E1_Combat2'){const jumpHint=tutorials.inputMode==='gamepad'?'[✕]':'[Espaço]';notice(`Encontro vencido! Suba as pedras à direita ${jumpHint}`,6);}else notice('Encontro vencido',4);}
+            if(event.type==='propBlocked')notice('Este objeto exige mais força',2);
+            if(event.type==='titanStunned'){const jackHint=tutorials.inputMode==='gamepad'?'◯ (B)':'L';notice('Spike atordoado! Pressione ' + jackHint + ' para montar',10);}
+            if(event.type==='jackRejected')notice('O titã ainda não está vulnerável à montagem!',2);
+            if(event.type==='jackAccepted')notice('Montagem aceita! (Mecânica nos próximos tickets)',3);
+          }
           const jump=combat.busy?(jumpInput.cancelPending(),null):jumpInput.consume(grounded);
           if(jump){velocity=9;jumpPhase=jump;jumpAge=0;jumpCount++;animate(jump==='air'?'jump_air':'jump_single',true);}
           jumpAge+=1/60;
@@ -246,16 +306,32 @@ export async function startGame(viewport, onExit, settings) {
         if(p.y<checkpointY-30||combat.needsRecovery){recover();p=body.translation();}
         const support = world.castRay(new RAPIER.Ray({x:p.x,y:p.y+.1,z:p.z},{x:0,y:-1,z:0}),10,true,undefined,undefined,collider);
         const room = support && collisionRegions.get(support.collider.handle); if (room && room !== activeRegion) selectRegion(room);
-        const reached=progress.visit([p.x,p.y,p.z]);if(reached.length){combat.markCheckpoint();breakables.markCheckpoint();pickups.markCheckpoint();notice('Checkpoint alcançado',3);}
-        crash.position.set(p.x,p.y-.95,p.z); if (direction.lengthSq()&&!combat.busy) crash.rotation.y = Math.atan2(direction.x,direction.z);
-        if(combat.animation)animate(combat.animation,true);
-        else if(controller.computedGrounded()&&velocity<=0)animate(direction.lengthSq()>.01?'run':'idle');
-        else {const falling=fallingAnimation(jumpPhase,jumpAge,velocity);if(falling)animate(falling);}
-        playerAnimation.update(dt);
-        enemies.render(combat.enemies,dt);updateHud();
-        camera.fov = 65; camera.updateProjectionMatrix();follow.update(crash.position,dt,occluders);
+        const reached=progress.visit([p.x,p.y,p.z]);if(reached.length){combat.markCheckpoint();breakables.markCheckpoint();pickups.markCheckpoint();tutorials.markCheckpoint();notice(reached.some(c=>c.id==='WhumpaE1LevelReset6')?'Checkpoint alcançado • Siga pela crista rochosa em frente':'Checkpoint alcançado',4);}
+        if(combat.isJacked&&combat.jackedTitan){
+          const titan=combat.jackedTitan;
+          crash.position.set(titan.position[0],titan.position[1]+1.8,titan.position[2]);
+          crash.rotation.y=titan.yaw;
+          animate(direction.lengthSq()>.01?'run':'idle');
+          playerAnimation.update(dt);
+          enemies.render(combat.enemies,dt);updateHud();
+          skipAmb.hidden=true;camera.fov = 65; camera.updateProjectionMatrix();
+          follow.update(new THREE.Vector3(titan.position[0],titan.position[1]+1.2,titan.position[2]),dt,occluders);
+        }else{
+          crash.position.set(p.x,p.y-.95,p.z); if (direction.lengthSq()&&!combat.busy) crash.rotation.y = Math.atan2(direction.x,direction.z);
+          if(combat.animation)animate(combat.animation,true);
+          else if(controller.computedGrounded()&&velocity<=0)animate(direction.lengthSq()>.01?'run':'idle');
+          else {const falling=fallingAnimation(jumpPhase,jumpAge,velocity);if(falling)animate(falling);}
+          playerAnimation.update(dt);
+          enemies.render(combat.enemies,dt);updateHud();
+          if(combat?.presentation){
+            skipAmb.hidden=false;skipAmb.textContent=tutorials.inputMode==='gamepad'?'Pular conversa [✕ / ▢]':'Pular conversa [Enter / J / Espaço]';
+            camera.fov=50;camera.updateProjectionMatrix();camera.position.set(44.54,12.8,4.2);camera.lookAt(44.54,11.8,-3.93);
+          } else {
+            skipAmb.hidden=true;camera.fov = 65; camera.updateProjectionMatrix();follow.update(crash.position,dt,occluders);
+          }
+        }
       }
-      sky.scene.position.copy(camera.position); props?.render(breakables,phase==='play',camera);pickupActors?.render(pickups,phase==='play',camera,gameplayTime);renderer.render(scene,camera);
+      sky.scene.position.copy(camera.position); props?.render(breakables,phase==='play',camera);pickupActors?.render(pickups,phase==='play',camera,gameplayTime);visuals?.update(dt,camera);renderer.render(scene,camera);
       root.dataset.phase = phase;
     }
     frameId = requestAnimationFrame(tick);
