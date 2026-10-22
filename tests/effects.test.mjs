@@ -2,6 +2,73 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GameplayAudio } from '../src/gameplay-audio.js';
 import { GameplayEffects } from '../src/gameplay-effects.js';
+import * as THREE from 'three';
+import { Combat } from '../src/combat.js';
+
+test('defeat flash stays at the defeated Chiratta when Crash walks away during the death animation', () => {
+ const combat=new Combat({
+  encounters:[{id:'L1_E1_Combat2',trigger:'arena',spawns:[{name:'Chiratta1',locator:'enemy'}]}],
+  volumes:{arena:{position:[0,0,0],halfExtents:[5,5,5],rotation:[0,0,0]}},
+  locators:{enemy:{position:[0,0,1.3],yaw:0}}
+ },{}, {rng:()=>.5});
+ const player={position:[0,0,0],yaw:0,grounded:true};
+ for(let frame=0;frame<300&&!combat.cleared.size;frame++){
+  combat.requestAttack();combat.step(.02,player);
+ }
+ assert.equal(combat.cleared.size,1,'defeat through ordinary light attacks');
+ player.position=[20,0,20];
+ const events=combat.step(1.8,player);
+ const death=events.find(event=>event.type==='enemyDeathDone');
+ assert(death,'death animation completes after Crash moves away');
+ const scene=new THREE.Scene(),fx=new GameplayEffects(scene);
+ fx.event(death,player.position);fx.update(0);
+ const flash=scene.children[0].children[1],matrix=new THREE.Matrix4(),position=new THREE.Vector3();
+ assert.equal(flash.count,10);
+ for(let i=0;i<flash.count;i++){
+  flash.getMatrixAt(i,matrix);position.setFromMatrixPosition(matrix);
+  assert.equal(position.x,0);assert.equal(position.y,.5);
+  assert(Math.abs(position.z-1.3)<1e-6);
+ }
+ assert.notStrictEqual(death.position,combat.enemies[0].position,'event owns its position snapshot');
+ fx.dispose();
+});
+
+test('rendered bursts use recovered textures, event colors and fading opacity, then release resources', async () => {
+ const loaded=[];
+ const fx=new GameplayEffects(new THREE.Scene(), 8);
+ await fx.loadTextures(async url=>{loaded.push(url);return new THREE.Texture();});
+ assert(loaded.some(url=>url.endsWith('/impact/star03.webp')));
+ assert(loaded.some(url=>url.endsWith('/death/flash09.webp')));
+ fx.event({type:'playerHit'});fx.update(.01);
+ const color=new THREE.Color();fx.mesh.getColorAt(0,color);
+ assert(color.r>color.g);
+ const opacity=fx.mesh.geometry.getAttribute('particleOpacity').getX(0);
+ fx.update(.05);
+ assert(fx.mesh.geometry.getAttribute('particleOpacity').getX(0)<opacity);
+ assert(fx.mesh.material.map);
+ const maps=fx.batches.map(batch=>batch.material.map);let disposed=0;
+ for(const map of maps)map.addEventListener('dispose',()=>disposed++);
+ fx.dispose();assert.equal(disposed,maps.length);
+});
+
+test('impact and defeat share one bounded pool and reset removes every rendered instance', () => {
+ const fx=new GameplayEffects(new THREE.Scene(),8);
+ for(let i=0;i<20;i++)fx.event({type:i%2?'enemyDeathDone':'enemyHit'});
+ fx.update(.01);
+ assert.equal(fx.batches.reduce((total,mesh)=>total+mesh.count,0),8);
+ fx.clear();assert(fx.batches.every(mesh=>mesh.count===0));
+ fx.update(1);assert(fx.batches.every(mesh=>mesh.count===0));
+ fx.dispose();assert.equal(fx.group.parent,null);
+});
+
+test('leaving during texture loading disposes the late images without resurrecting effects', async () => {
+ const fx=new GameplayEffects(new THREE.Scene());const pending=[];let disposed=0;
+ const loaded=fx.loadTextures(()=>new Promise(resolve=>pending.push(resolve)));
+ fx.dispose();
+ for(const resolve of pending){const texture=new THREE.Texture();texture.addEventListener('dispose',()=>disposed++);resolve(texture);}
+ await loaded;
+ assert.equal(disposed,2);assert(fx.batches.every(mesh=>!mesh.visible));
+});
 
 class MockAudioSource {
  constructor(onended) {

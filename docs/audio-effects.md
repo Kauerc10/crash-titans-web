@@ -31,12 +31,16 @@ Mapeamento de evidências originais da ROM PS2 (SLUS_215.83, SOUND.RCF, DEFAULT.
   * Respeita imediatamente `muted`, controle de volume (`effects`) e modo de canais (mono/stereo).
   * O estado de pausa interrompe todas as vozes em execução e suspende o `AudioContext`; a recuperação de checkpoint ou término limpa todos os buffers.
 * **Pool de partículas (`GameplayEffects`)**:
-  * Instâncias pré-alocadas de tamanho fixo (128 partículas) usando `THREE.InstancedMesh`.
-  * Zero alocações em heap durante o loop de jogo (sem coletas de lixo / GC spikes).
-  * As partículas orientam-se continuamente para a câmera (`billboard`) e sofrem atenuação linear de opacidade e escala até expirar.
+  * Pool de 128 partículas usando dois `THREE.InstancedMesh`: impacto/coleta com `impact/star03.webp` e desaparecimento/recompensa com `death/flash09.webp`. As demais texturas convertidas estão disponíveis, mas não são usadas neste renderer.
+  * O total de partículas ativas é limitado a 128, compartilhadas entre dois lotes instanciados; cada lote reserva capacidade fixa. Não há promessa de zero alocações no loop.
+  * As partículas orientam-se continuamente para a câmera (`billboard`) e sofrem atenuação linear de opacidade por instância e escala até expirar. A cor por evento multiplica a textura recuperada.
   * `clear()` reinicia imediatamente o pool na pausa ou ao retornar a um checkpoint.
 
 ## 4. Lacunas e limitações conhecidas
 
 * A simulação física completa dos emissores Pure3D (canais `SPAR`, `SPEM`, `PSPG` sob o chunk `0x1580c`) permanece como aproximação por quads billboard instanciados com as texturas originais.
 * Falas aleatórias dos inimigos em combate (`labrat_vo_hit`, `labrat_vo_hitbig`) ainda necessitam de decodificação das tabelas de diálogo por idioma.
+
+## Seleção de setores
+
+O suporte físico do jogador escolhe o setor visível, preservando a seleção usada antes da regressão. Setores inativos, incluindo a sala bônus, não participam dos oclusores da câmera. A travessia integral e as cenas ainda ausentes continuam pendentes; testes por teleporte são apenas diagnósticos de seleção, nunca prova do percurso.

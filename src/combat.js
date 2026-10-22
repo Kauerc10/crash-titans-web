@@ -20,16 +20,15 @@ export class Combat {
   this.data=data;this.durations=durations;this.rng=options.rng||durations.rng||Math.random;
   this.cleared=new Set();this.savedCleared=new Set();this.generation=0;this.resetToCheckpoint();
  }
- resetToCheckpoint(){this.cleared=new Set(this.savedCleared);this.enemies=[];this.encounter=null;this.presentation=null;this.attack=null;this.queued=false;this.queuedHeavy=false;this.combo=-1;this.sinceAttack=10;this.needsRecovery=false;this.player={health:combatTuning.playerHealth,invulnerable:0,hitTime:0,deathTime:0};this.events=[];this.generation++;}
- markCheckpoint(){this.savedCleared=new Set(this.cleared);}
+ resetToCheckpoint(){this.cleared=new Set(this.savedCleared);this.enemies=structuredClone(this.savedEncounter?.enemies||[]);this.encounter=this.savedEncounter?.encounter||null;this.presentation=structuredClone(this.savedEncounter?.presentation||null);this.attack=null;this.queued=false;this.combo=-1;this.sinceAttack=10;this.needsRecovery=false;this.player={health:combatTuning.playerHealth,invulnerable:0,hitTime:0,deathTime:0};this.events=[];this.generation++;}
+ markCheckpoint(){this.savedCleared=new Set(this.cleared);this.savedEncounter=structuredClone({enemies:this.enemies,encounter:this.encounter,presentation:this.presentation});}
  requestAttack(){if(!this.presentation&&this.player.health>0&&this.player.hitTime<=0)this.queued=true;}
- requestHeavyAttack(){if(!this.presentation&&this.player.health>0&&this.player.hitTime<=0)this.queuedHeavy=true;}
  skipPresentation(){
   if(this.presentation){
    const id=this.presentation.id;
    this.presentation=null;
    this.queued=false;
-   this.queuedHeavy=false;
+
    for(const enemy of this.enemies)enemy.animation='idle_combat';
    this.events.push({type:'presentationEnded',id,skipped:true});
   }
@@ -60,12 +59,8 @@ export class Combat {
    const line=p.lines.find(line=>p.age>=line.start&&p.age<line.end);
    for(const enemy of this.enemies){enemy.motion=[0,0];enemy.animation=enemy.sourceName===line?.actor?'talk':'idle_combat';}
    if(p.age<p.duration)return events;
-   events.push({type:'presentationEnded',id:p.id});this.presentation=null;this.queued=false;this.queuedHeavy=false;
+   events.push({type:'presentationEnded',id:p.id});this.presentation=null;this.queued=false;
    for(const enemy of this.enemies)enemy.animation='idle_combat';
-  }
-  if(this.queuedHeavy&&!this.attack&&this.player.hitTime<=0&&player.grounded){
-   const clip='attack_lite_C';
-   this.attack={clip,age:0,duration:this.durations[clip]||combatRules.durations[clip],strikes:combatRules.attacks[clip].map(s=>({...s,hit:new Set()}))};this.queuedHeavy=false;this.queued=false;events.push({type:'playerAttack',heavy:true});
   }
   if(this.queued&&!this.attack&&this.player.hitTime<=0&&player.grounded){
    this.combo=this.sinceAttack<.75?(this.combo+1)%3:0;const clip=`attack_lite_${'ABC'[this.combo]}`;
@@ -93,7 +88,7 @@ export class Combat {
     }
     if(!e.deathDone&&e.age>=(this.durations.enemyDeath||combatTuning.enemyDeathDuration)){
      e.deathDone=true;
-     events.push({type:'enemyDeathDone',id:e.id});
+     events.push({type:'enemyDeathDone',id:e.id,position:[...e.position]});
     }
     continue;
    }

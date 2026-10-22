@@ -23,6 +23,6 @@ Run the ambient converter with `--iso` pointing to the local disc image. Re-run 
 
 ## Limits
 
-The original engine's inter-line padding and interruption semantics have not been fully decoded. The native sequence currently follows the decoded speech durations. The gameplay camera remains active because an original Amb1 camera override has not been recovered. Skip is disabled for this conversation: the boolean argument to `WAIT_PlayCinematic` alone is insufficient evidence of original skip permission. Facial deformation channels remain outside the current GLB conversion.
+The original engine's inter-line padding and interruption semantics have not been fully decoded. The native sequence currently follows the decoded speech durations. The runtime uses a native presentation framing and offers a skip button, returning movement and light-attack control afterward. That framing is not a recovered original Amb1 camera override. Original interruption and skip permission remain unverified: the boolean argument to `WAIT_PlayCinematic` alone does not establish them. Offering native skip must not be represented as verified PS2 behavior. Facial deformation channels remain outside the current GLB conversion.
 
 The deterministic encounter tests cover movement/attack gating, speaker changes, completion and retry. Full normal-route browser acceptance is recorded separately; this document does not treat direct-start or teleport diagnostics as evidence of that route.

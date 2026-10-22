@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 // Bounded particle pool for hit sparks, defeat flash and pickup bursts.
-// Pre-allocated capacity guarantees zero heap allocations during gameplay.
+// Native billboard simulation; recovered textures do not reproduce Pure3D emitters.
 export class GameplayEffects {
  constructor(scene, capacity = 128) {
   this.scene = scene;
@@ -19,25 +19,38 @@ export class GameplayEffects {
   this.group = new THREE.Group();
   if (scene) scene.add(this.group);
 
-  const geom = new THREE.PlaneGeometry(0.35, 0.35);
-  const mat = new THREE.MeshBasicMaterial({
-   color: 0xfff0aa,
-   transparent: true,
-   opacity: 0.9,
-   depthWrite: false,
-   blending: THREE.AdditiveBlending,
-   side: THREE.DoubleSide
+  this.disposed = false;
+  this.batches = ['impact/star03.webp', 'death/flash09.webp'].map(path => {
+   const geom = new THREE.PlaneGeometry(0.35, 0.35);
+   geom.setAttribute('particleOpacity', new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1));
+   const mat = new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, depthWrite:false,
+    blending:THREE.AdditiveBlending, side:THREE.DoubleSide});
+   mat.onBeforeCompile = shader => {
+    shader.vertexShader = 'attribute float particleOpacity; varying float vParticleOpacity;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvParticleOpacity = particleOpacity;');
+    shader.fragmentShader = 'varying float vParticleOpacity;\n' + shader.fragmentShader.replace('#include <opaque_fragment>', 'diffuseColor.a *= vParticleOpacity;\n#include <opaque_fragment>');
+   };
+   const mesh = new THREE.InstancedMesh(geom, mat, capacity);
+   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+   mesh.count=0; mesh.frustumCulled=false; mesh.visible=false;
+   mesh.userData.texturePath=path;
+   this.group.add(mesh); return mesh;
   });
-  this.mesh = new THREE.InstancedMesh(geom, mat, capacity);
-  this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  this.mesh.count = 0;
-  this.mesh.frustumCulled = false;
-  this.group.add(this.mesh);
+  this.mesh=this.batches[0];
+  this.color=new THREE.Color();
 
   this.dummy = new THREE.Object3D();
  }
 
- spawnBurst(x, y, z, count = 5, speed = 3.0, duration = 0.35, color = [1, 0.9, 0.5]) {
+ async loadTextures(load = url => new THREE.TextureLoader().loadAsync(url)) {
+  await Promise.all(this.batches.map(async mesh => {
+   const texture=await load('/assets/effects/'+mesh.userData.texturePath);
+   if(this.disposed){texture.dispose();return;}
+   texture.colorSpace=THREE.SRGBColorSpace;
+   mesh.material.map=texture;mesh.material.needsUpdate=true;mesh.visible=true;
+  }));
+ }
+
+ spawnBurst(x, y, z, count = 5, speed = 3.0, duration = 0.35, color = [1, 0.9, 0.5], kind=0) {
   for (let i = 0; i < count; i++) {
    const p = this.particles.find(pt => !pt.active) || this.particles[i % this.capacity];
    p.active = true;
@@ -51,7 +64,7 @@ export class GameplayEffects {
    p.age = 0;
    p.duration = duration * (0.8 + Math.random() * 0.4);
    p.scale = 0.8 + Math.random() * 0.5;
-   p.color = color;
+   p.color = color; p.kind=kind;
   }
  }
 
@@ -64,7 +77,7 @@ export class GameplayEffects {
    this.spawnBurst(pos[0], pos[1] + 0.9, pos[2], 6, 2.5, 0.4, [1, 0.3, 0.2]);
   } else if (event.type === 'enemyReward' || event.type === 'enemyDeathDone') {
    const pos = event.position || defaultPos;
-   this.spawnBurst(pos[0], pos[1] + 0.5, pos[2], 10, 3.5, 0.5, [0.4, 0.8, 1]);
+   this.spawnBurst(pos[0], pos[1] + 0.5, pos[2], 10, 3.5, 0.5, [0.4, 0.8, 1], 1);
   } else if (['mojoCollected', 'healthCollected', 'freeJackCollected'].includes(event.type)) {
    const pos = event.position || defaultPos;
    const color = event.type === 'healthCollected' ? [1, 0.4, 0.2] : event.type === 'freeJackCollected' ? [1, 0.9, 0.2] : [0.4, 0.8, 1];
@@ -73,7 +86,7 @@ export class GameplayEffects {
  }
 
  update(dt, camera) {
-  let active = 0;
+  for(const mesh of this.batches) mesh.count=0;
   for (const p of this.particles) {
    if (!p.active) continue;
    p.age += dt;
@@ -93,23 +106,27 @@ export class GameplayEffects {
    this.dummy.scale.set(s, s, s);
    this.dummy.updateMatrix();
 
-   this.mesh.setMatrixAt(active, this.dummy.matrix);
-   active++;
+   const mesh=this.batches[p.kind||0], index=mesh.count++;
+   mesh.setMatrixAt(index, this.dummy.matrix);
+   mesh.setColorAt(index,this.color.setRGB(...p.color));
+   mesh.geometry.getAttribute('particleOpacity').setX(index,life*.9);
   }
-  this.mesh.count = active;
-  this.mesh.instanceMatrix.needsUpdate = true;
+  for(const mesh of this.batches){
+   mesh.instanceMatrix.needsUpdate=true;
+   if(mesh.instanceColor)mesh.instanceColor.needsUpdate=true;
+   mesh.geometry.getAttribute('particleOpacity').needsUpdate=true;
+  }
  }
 
  clear() {
   for (const p of this.particles) p.active = false;
-  this.mesh.count = 0;
-  this.mesh.instanceMatrix.needsUpdate = true;
+  for(const mesh of this.batches){mesh.count=0;mesh.instanceMatrix.needsUpdate=true;}
  }
 
  dispose() {
   this.clear();
   this.group.removeFromParent();
-  this.mesh.geometry.dispose();
-  this.mesh.material.dispose();
+  this.disposed=true;
+  for(const mesh of this.batches){mesh.geometry.dispose();mesh.material.map?.dispose();mesh.material.dispose();}
  }
 }

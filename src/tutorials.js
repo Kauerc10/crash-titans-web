@@ -1,13 +1,16 @@
 import { containsVolume } from './episode.js';
 
+// Reference inventory may describe actions not implemented by this runtime.
+export const unavailableTutorials = new Set(['Tutorial_Tutorial_BouncePad','MultiplyTutorial','Tutorial_Hint_SpinHover','Tutorial_Hint_BlockBreaker','Tutorial_Tutorial_Jack','SpikeCinematic']);
+
 export class TutorialManager {
-  constructor(gameplayData, audioManager = null) {
+  constructor(gameplayData) {
     this.gameplay = gameplayData;
     this.tutorials = gameplayData.tutorials || [];
     this.volumes = gameplayData.volumes || {};
-    this.audio = audioManager;
     this.completed = new Set();
     this.checkpointCompleted = new Set();
+    this.checkpointActive = null;
     this.active = null; // { id, title, text, type, until, remaining, duration, audio }
     this.inputMode = 'keyboard'; // 'keyboard' | 'gamepad'
     this.gameplayTime = 0;
@@ -40,11 +43,13 @@ export class TutorialManager {
 
   markCheckpoint() {
     this.checkpointCompleted = new Set(this.completed);
+    this.checkpointActive = this.active ? {...this.active,remaining:this.active.remaining??Math.max(0,this.active.until-this.gameplayTime)} : null;
   }
 
   resetToCheckpoint() {
     this.completed = new Set(this.checkpointCompleted);
-    this.active = null;
+    this.active = this.checkpointActive ? {...this.checkpointActive,until:this.gameplayTime+this.checkpointActive.remaining,remaining:this.paused?this.checkpointActive.remaining:null} : null;
+    if(this.active){const def=this.tutorials.find(t=>t.id===this.active.id);this.active.text=def?.texts?.[this.inputMode]||def?.texts?.keyboard||'';}
     this.spikeReached = this.completed.has('SpikeCinematic');
   }
 
@@ -60,6 +65,7 @@ export class TutorialManager {
   }
 
   triggerTutorial(tut) {
+    if(tut.implemented===false||unavailableTutorials.has(tut.id))return null;
     this.completed.add(tut.id);
     this.active = {
       id: tut.id,
@@ -70,11 +76,6 @@ export class TutorialManager {
       until: this.gameplayTime + (tut.duration || 5),
       audio: tut.audio
     };
-    if (tut.audio && this.audio?.playTutorial) {
-      this.audio.playTutorial(tut.audio);
-    } else if (this.audio?.playFrontEnd) {
-      this.audio.playFrontEnd('chime');
-    }
     return {
       type: 'tutorialStarted',
       id: tut.id,
@@ -95,11 +96,11 @@ export class TutorialManager {
       }
     }
 
-    if (!position || !episodeProgress) return events;
+    if (this.paused || !position || !episodeProgress) return events;
 
     // Check each tutorial definition against triggers and prerequisites
     for (const tut of this.tutorials) {
-      if (this.completed.has(tut.id)) continue;
+      if (tut.implemented===false||unavailableTutorials.has(tut.id)||this.completed.has(tut.id)) continue;
 
       // Prerequisites check: all required objective IDs must be completed
       if (tut.requires?.length) {
@@ -131,30 +132,6 @@ export class TutorialManager {
 
       if (triggered) {
         events.push(this.triggerTutorial(tut));
-      }
-    }
-
-    // Check Spike interaction entrance
-    const playSpikeVol = this.volumes['PlaySpike'];
-    if (playSpikeVol && containsVolume(playSpikeVol, position)) {
-      if (episodeProgress.completed.has('L1_E1_Combat2')) {
-        if (!this.spikeReached) {
-          this.spikeReached = true;
-          this.completed.add('SpikeCinematic');
-          episodeProgress.complete('SpikeCinematic');
-          events.push({
-            type: 'spikeInteractionReached',
-            id: 'SpikeCinematic',
-            position: [...position],
-            locator: 'NIS_20'
-          });
-        }
-      } else {
-        events.push({
-          type: 'spikeInteractionBlocked',
-          id: 'SpikeCinematic',
-          reason: 'Prerequisite L1_E1_Combat2 not satisfied'
-        });
       }
     }
 

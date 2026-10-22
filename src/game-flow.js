@@ -40,7 +40,7 @@ export async function startGame(viewport, onExit, settings) {
   const keys = new Set(), resources = new Set();
   const jumpInput = new JumpInput(); let progress,follow,noticeUntil=0,gameplayTime=0,jumpCount=0,recoveryCount=0,spaceHeld=false;
   let breakables,props,pickups,pickupActors;
-  let combat,enemies,visuals,padAttackDown=false,padHeavyDown=false;
+  let combat,enemies,visuals,padAttackDown=false;
   let tutorials;
   function updateHud(){if(combat)gameplayHud.update(combat,pickups,gameplayTime,tutorials);}
   const padJumpHeld=()=>[...(navigator.getGamepads?.()||[])].some(p=>p?.mapping==='standard'&&p.buttons[0]?.pressed);
@@ -49,7 +49,7 @@ export async function startGame(viewport, onExit, settings) {
   const collisionRegions = new Map(); let activeRegion = 'r1';
   function selectRegion(name) {
     activeRegion = name;
-    for(const [region,object] of regionObjects)object.visible=true;
+    for(const [region,object] of regionObjects)object.visible=region===name;
     occluders.length=0;
     for(const object of regionObjects.values()){
       object.traverse(o=>{
@@ -79,6 +79,7 @@ export async function startGame(viewport, onExit, settings) {
   function notice(text,seconds=5){status.hidden=false;status.textContent=text;noticeUntil=gameplayTime+seconds;}
   function recover(){
     const checkpoint=progress?.recovery();if(!checkpoint||!body)return;
+    progress.resetToCheckpoint();
     body.setTranslation({x:checkpoint.position[0],y:checkpoint.position[1]+.95,z:checkpoint.position[2]},true);
     crash.rotation.y=checkpoint.yaw;velocity=0;accumulator=0;keys.clear();spaceHeld=false;jumpInput.reset();follow.reset();
     recoveryCount++;
@@ -92,7 +93,6 @@ export async function startGame(viewport, onExit, settings) {
     keys.add(e.code);
     if(e.code==='Space'&&!e.repeat){spaceHeld=true;if(phase==='play'&&!paused){if(combat?.presentation){combat.skipPresentation();ambientAudio?.pause();}else jumpInput.press();}}
     if(e.code==='KeyJ'&&!e.repeat&&phase==='play'&&!paused){if(combat?.presentation){combat.skipPresentation();ambientAudio?.pause();}else combat?.requestAttack();}
-    if(e.code==='KeyK'&&!e.repeat&&phase==='play'&&!paused){if(combat?.presentation){combat.skipPresentation();ambientAudio?.pause();}else combat?.requestHeavyAttack();}
     if(e.code==='Enter'&&!e.repeat&&phase==='play'&&!paused&&combat?.presentation){combat.skipPresentation();ambientAudio?.pause();}
     if (e.code === 'Escape' && !e.repeat) pauseButton.click();
   }
@@ -117,12 +117,14 @@ export async function startGame(viewport, onExit, settings) {
       if (motion) { const p = motion.getWorldPosition(new THREE.Vector3()); body.setTranslation({x:p.x,y:p.y+1,z:p.z},true); }
     }
     velocity = 0;accumulator=0;jumpInput.reset();follow.reset();
-    const entry=body.translation();progress.setEntry([entry.x,entry.y-.95,entry.z],crash.rotation.y);progress.complete('NIS01');
+    const entry=body.translation();progress.complete('NIS01');progress.setEntry([entry.x,entry.y-.95,entry.z],crash.rotation.y);
     hud.hidden=false;updateHud();
     notice('WASD / setas: mover • Espaço: salto / salto duplo • J: ataque leve • Esc: pausa',8);
     animate('idle');
   }
   try {
+    await visuals.loadTextures();
+    if(stopped)return;
     renderer = new THREE.WebGLRenderer({antialias:true}); renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)); renderer.outputColorSpace = THREE.SRGBColorSpace; root.prepend(renderer.domElement);
     observer.disconnect(); observer.observe(root);
     const manager = new THREE.LoadingManager(); manager.onProgress = (_, n, total) => { status.textContent = `CARREGANDO… ${n} / ${total} recursos`; };
@@ -141,7 +143,7 @@ export async function startGame(viewport, onExit, settings) {
     if(!new URLSearchParams(location.search).has('combat-test')&&!new URLSearchParams(location.search).has('interactions-test'))gameplay.encounters.find(e=>e.id==='L1_E1_Combat2').presentation=ambient;
     ambientAudio=new Audio(ambient.audio);ambientAudio.volume=settings.muted?0:settings.effects;ambientAudio.preload='auto';root.append(ambientAudio);
     progress = new EpisodeProgress(gameplay);follow=new FollowCamera(camera);
-    tutorials = new TutorialManager(gameplay, effects);
+    tutorials = new TutorialManager(gameplay);
     const collision = await json(base + 'source-collision.json');
     const collisionBytes = await (await fetch(base + 'source-collision.bin')).arrayBuffer();
     await RAPIER.init(); if (stopped) return;
@@ -239,11 +241,10 @@ export async function startGame(viewport, onExit, settings) {
         accumulator = Math.min(accumulator+dt,.1);
         const pad=[...(navigator.getGamepads?.()||[])].find(p=>p&&p.mapping==='standard');
         if(pad&&(Math.abs(pad.axes[0]||0)>.2||Math.abs(pad.axes[1]||0)>.2||pad.buttons.some(b=>b?.pressed)))tutorials.setInputMode('gamepad');
-        const padAttack=!!pad?.buttons[2]?.pressed;const padHeavy=!!pad?.buttons[3]?.pressed;
+        const padAttack=!!pad?.buttons[2]?.pressed;
         if(padAttack&&!padAttackDown){if(combat?.presentation){combat.skipPresentation();ambientAudio?.pause();}else combat.requestAttack();}
-        if(padHeavy&&!padHeavyDown){if(combat?.presentation){combat.skipPresentation();ambientAudio?.pause();}else combat.requestHeavyAttack();}
         if(pad?.buttons[9]?.pressed&&combat?.presentation){combat.skipPresentation();ambientAudio?.pause();}
-        padAttackDown=padAttack;padHeavyDown=padHeavy;
+        padAttackDown=padAttack;
         const deadzone=value=>Math.abs(value||0)>.2?value:0;
         const x = Number(keys.has('KeyD')||keys.has('ArrowRight'))-Number(keys.has('KeyA')||keys.has('ArrowLeft'))+deadzone(pad?.axes[0]);
         const z = Number(keys.has('KeyS')||keys.has('ArrowDown'))-Number(keys.has('KeyW')||keys.has('ArrowUp'))+deadzone(pad?.axes[1]);
@@ -261,13 +262,11 @@ export async function startGame(viewport, onExit, settings) {
           for(const event of events){
             if(event.type==='healthCollected')combat.healPlayer(event.value);
             if(event.type==='presentationStarted'){ambientAudio.currentTime=0;ambientAudio.play().catch(showError);skipAmb.hidden=false;notice('Conversa dos Chirattas • Pressione Enter ou J para pular',combat.presentation.duration);}
-            if(event.type==='presentationEnded'){ambientAudio.pause();skipAmb.hidden=true;follow.reset();notice('Derrote os Chirattas • J: ataque leve • K: ataque pesado',5);}
-            if(event.type==='tutorialStarted'){effects.event(event);}
+            if(event.type==='presentationEnded'){ambientAudio.pause();skipAmb.hidden=true;follow.reset();notice('Derrote os Chirattas • J: ataque leve',5);}
             gameplayHud.event(event,gameplayTime);effects.event(event);visuals?.event(event,[pp.x,pp.y-.95,pp.z]);
             if(event.type==='spawn')notice('Derrote os Chirattas • J: ataque leve',5);
             if(event.type==='cleared'){progress.complete(event.id);notice('Encontro vencido',4);}
             if(event.type==='propBlocked')notice('Este objeto exige mais força',2);
-            if(event.type==='spikeInteractionReached')notice('Primeiro Titã: Spike • Prepare-se para enfrentar o titã',6);
           }
           const jump=combat.busy?(jumpInput.cancelPending(),null):jumpInput.consume(grounded);
           if(jump){velocity=9;jumpPhase=jump;jumpAge=0;jumpCount++;animate(jump==='air'?'jump_air':'jump_single',true);}
@@ -289,7 +288,7 @@ export async function startGame(viewport, onExit, settings) {
         playerAnimation.update(dt);
         enemies.render(combat.enemies,dt);updateHud();
         if(combat?.presentation){
-          skipAmb.hidden=false;skipAmb.textContent=tutorials.inputMode==='gamepad'?'Pular conversa [✕ / ▢ / △]':'Pular conversa [Enter / J / Espaço]';
+          skipAmb.hidden=false;skipAmb.textContent=tutorials.inputMode==='gamepad'?'Pular conversa [✕ / ▢]':'Pular conversa [Enter / J / Espaço]';
           camera.fov=50;camera.updateProjectionMatrix();camera.position.set(44.54,12.8,4.2);camera.lookAt(44.54,11.8,-3.93);
         } else {
           skipAmb.hidden=true;camera.fov = 65; camera.updateProjectionMatrix();follow.update(crash.position,dt,occluders);
