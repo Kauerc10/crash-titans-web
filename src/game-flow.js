@@ -49,7 +49,7 @@ export async function startGame(viewport, onExit, settings) {
   const collisionRegions = new Map(); let activeRegion = 'r1';
   function selectRegion(name) {
     activeRegion = name;
-    for(const [region,object] of regionObjects)object.visible=true;
+    for(const [region,object] of regionObjects)object.visible=region===name;
     occluders.length=0;
     for(const object of regionObjects.values()){
       object.traverse(o=>{
@@ -123,6 +123,8 @@ export async function startGame(viewport, onExit, settings) {
     animate('idle');
   }
   try {
+    await visuals.loadTextures();
+    if(stopped)return;
     renderer = new THREE.WebGLRenderer({antialias:true}); renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)); renderer.outputColorSpace = THREE.SRGBColorSpace; root.prepend(renderer.domElement);
     observer.disconnect(); observer.observe(root);
     const manager = new THREE.LoadingManager(); manager.onProgress = (_, n, total) => { status.textContent = `CARREGANDO… ${n} / ${total} recursos`; };
