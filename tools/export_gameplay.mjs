@@ -1,3 +1,4 @@
+import { unavailableTutorials } from '../src/tutorials.js';
 import { readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -203,6 +204,8 @@ const tutorials = [
     duration: 5
   }
 ];
+
+for(const tutorial of tutorials)tutorial.implemented=!unavailableTutorials.has(tutorial.id);
 
 const output = {episode:'L1_E1',source:logic.scripts.objectives.source,coordinateSystem:'Y up; Z mirrored',
   checkpoints,volumes,locators,tutProps,tutorials,objectives,encounters,
