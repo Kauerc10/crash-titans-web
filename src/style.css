@@ -213,5 +213,6 @@ kbd { color: #fff0b7; font: 700 14px/1.8 SystemUI, sans-serif; min-width: 33px; 
 .hud-tutorial-divider { width:75%; height:6px; opacity:0.75; margin-top:6px; }
 
 .skip-conversation-pill { position:absolute; bottom:28px; right:28px; background:rgba(12,16,22,.92); border:1.5px solid #ffcc33; color:#ffdd55; font:bold 14px 'Trebuchet MS',sans-serif; padding:10px 18px; border-radius:24px; cursor:pointer; z-index:20; display:flex; align-items:center; gap:8px; box-shadow:0 6px 16px rgba(0,0,0,.6); transition:background .15s, transform .15s; }
+.skip-conversation-pill[hidden] { display:none; }
 .skip-conversation-pill:hover { background:rgba(255,204,51,.25); transform:scale(1.04); }
 .skip-conversation-pill:active { transform:scale(0.98); }
